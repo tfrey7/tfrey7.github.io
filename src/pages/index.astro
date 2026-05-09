@@ -22,19 +22,27 @@ const contactBits = [
     </header>
 
     <!-- Skills -->
-    <section class="resume-section" aria-labelledby="skills-heading">
+    <section class="resume-section skills-stage" aria-labelledby="skills-heading">
       <h2 id="skills-heading" class="resume-section-title">Technical Skills</h2>
 
       <ul class="resume-bullets">
         {
           skills.map((group) => (
             <li>
-              <span class="font-semibold text-slate-900 dark:text-slate-100">{group.label}:</span>{' '}
-              <span>{group.items.join(', ')}</span>
+              <span class="skill-item font-semibold text-slate-900 dark:text-slate-100">
+                {group.label}:
+              </span>{' '}
+              {group.items.flatMap((item, i) => [
+                <span class="skill-item">{item}</span>,
+                i < group.items.length - 1 ? <span>, </span> : null,
+              ])}
             </li>
           ))
         }
       </ul>
+
+      <div class="skills-curtain skills-curtain-left" aria-hidden="true"></div>
+      <div class="skills-curtain skills-curtain-right" aria-hidden="true"></div>
     </section>
 
     <!-- Experience -->
@@ -75,3 +83,100 @@ const contactBits = [
     </section>
   </main>
 </Base>
+
+<script>
+  type Direction = 'left' | 'right';
+
+  const stage = document.querySelector<HTMLElement>('.skills-stage');
+  const SETTLE_MS = 1200;
+  const CURTAIN_CLOSE_MS = 420;
+  const CURTAIN_HOLD_MS = 800;
+  let fixTimer: number | null = null;
+  let cascading = false;
+
+  function fall(el: HTMLElement, direction: Direction, delay: number) {
+    const magnitude = 28 + Math.random() * 28;
+    const signed = direction === 'right' ? magnitude : -magnitude;
+    el.style.setProperty('--fall-angle', `${signed}deg`);
+    el.style.setProperty('--fall-origin', direction === 'right' ? '0% 100%' : '100% 100%');
+
+    window.setTimeout(() => {
+      if (el.classList.contains('is-fallen')) return;
+      el.classList.add('is-fallen');
+      scheduleFix();
+    }, delay);
+  }
+
+  function startCascade(clickX: number, clickY: number) {
+    if (!stage || cascading || stage.classList.contains('is-fixing')) return;
+    cascading = true;
+
+    const items = Array.from(stage.querySelectorAll<HTMLElement>('.skill-item'));
+    items.forEach((el) => {
+      const r = el.getBoundingClientRect();
+      const cx = (r.left + r.right) / 2;
+      const cy = (r.top + r.bottom) / 2;
+      const dx = cx - clickX;
+      const dy = cy - clickY;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const delay = dist * 0.9 + Math.random() * 80;
+      const direction: Direction = dx >= 0 ? 'right' : 'left';
+      fall(el, direction, delay);
+    });
+  }
+
+  function scheduleFix() {
+    if (fixTimer !== null) window.clearTimeout(fixTimer);
+    fixTimer = window.setTimeout(runFix, SETTLE_MS);
+  }
+
+  function runFix() {
+    fixTimer = null;
+    if (!stage) return;
+    const fallen = stage.querySelectorAll<HTMLElement>('.skill-item.is-fallen');
+    if (fallen.length === 0) {
+      cascading = false;
+      return;
+    }
+
+    stage.classList.add('is-fixing');
+
+    window.setTimeout(() => spawnPuffs(stage, 12), CURTAIN_CLOSE_MS - 60);
+
+    window.setTimeout(() => {
+      fallen.forEach((el) => {
+        el.style.transition = 'none';
+        el.classList.remove('is-fallen');
+        el.style.removeProperty('--fall-angle');
+        el.style.removeProperty('--fall-origin');
+        void el.offsetHeight;
+        el.style.transition = '';
+      });
+    }, CURTAIN_CLOSE_MS + 80);
+
+    window.setTimeout(() => {
+      stage.classList.remove('is-fixing');
+      cascading = false;
+    }, CURTAIN_CLOSE_MS + CURTAIN_HOLD_MS);
+  }
+
+  function spawnPuffs(stageEl: HTMLElement, count: number) {
+    for (let i = 0; i < count; i++) {
+      window.setTimeout(() => {
+        const puff = document.createElement('div');
+        puff.className = 'skills-puff';
+        puff.style.left = `${42 + Math.random() * 16}%`;
+        puff.style.top = `${10 + Math.random() * 80}%`;
+        puff.style.setProperty('--puff-size', `${22 + Math.random() * 36}px`);
+        puff.style.setProperty('--puff-drift-x', `${(Math.random() - 0.5) * 60}px`);
+        puff.style.setProperty('--puff-drift-y', `${-20 - Math.random() * 30}px`);
+        stageEl.appendChild(puff);
+        window.setTimeout(() => puff.remove(), 900);
+      }, i * 60);
+    }
+  }
+
+  stage?.addEventListener('click', (e) => {
+    startCascade(e.clientX, e.clientY);
+  });
+</script>

@@ -69,4 +69,95 @@
   .resume-bullets {
     @apply mt-1.5 space-y-1 list-disc pl-5 marker:text-slate-400 dark:marker:text-slate-600;
   }
+
+  .skill-item {
+    display: inline-block;
+    transform-origin: var(--fall-origin, 0% 100%);
+    transition: transform 0.45s cubic-bezier(0.55, 0.05, 0.45, 1);
+    user-select: none;
+  }
+
+  .skill-item.is-fallen {
+    transform: rotate(var(--fall-angle, 82deg));
+  }
+
+  .skills-stage {
+    position: relative;
+    overflow: hidden;
+    cursor: pointer;
+  }
+
+  .skills-stage.is-fixing {
+    cursor: default;
+    pointer-events: none;
+  }
+
+  .skills-curtain {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 52%;
+    z-index: 20;
+    pointer-events: none;
+    background-image:
+      repeating-linear-gradient(
+        90deg,
+        rgba(0, 0, 0, 0.18) 0px,
+        rgba(0, 0, 0, 0.18) 1px,
+        transparent 1px,
+        transparent 10px
+      ),
+      linear-gradient(90deg, #1c2541 0%, #2a3a6b 50%, #1c2541 100%);
+    box-shadow: 0 0 24px rgba(0, 0, 0, 0.35) inset;
+    transition: transform 0.42s cubic-bezier(0.45, 0.05, 0.25, 1);
+  }
+
+  .skills-curtain-left {
+    left: 0;
+    transform: translateX(-101%);
+  }
+
+  .skills-curtain-right {
+    right: 0;
+    transform: translateX(101%);
+  }
+
+  .skills-stage.is-fixing .skills-curtain-left,
+  .skills-stage.is-fixing .skills-curtain-right {
+    transform: translateX(0);
+  }
+
+  .skills-puff {
+    position: absolute;
+    width: var(--puff-size, 30px);
+    height: var(--puff-size, 30px);
+    border-radius: 50%;
+    pointer-events: none;
+    z-index: 21;
+    background: radial-gradient(
+      circle at 35% 35%,
+      rgba(240, 240, 240, 0.9),
+      rgba(180, 180, 180, 0.55) 55%,
+      rgba(120, 120, 120, 0) 75%
+    );
+    transform: translate(-50%, -50%) scale(0.4);
+    opacity: 0;
+    animation: skills-puff 0.85s ease-out forwards;
+  }
+
+  @keyframes skills-puff {
+    0% {
+      opacity: 0;
+      transform: translate(-50%, -50%) scale(0.4);
+    }
+    20% {
+      opacity: 0.95;
+    }
+    100% {
+      opacity: 0;
+      transform:
+        translate(calc(-50% + var(--puff-drift-x, 0px)), calc(-50% + var(--puff-drift-y, -20px)))
+        scale(1.7);
+    }
+  }
 }
