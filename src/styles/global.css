@@ -4,7 +4,7 @@
 
 @layer base {
   :root {
-    color-scheme: light;
+    color-scheme: light dark;
   }
 
   html {
@@ -12,7 +12,7 @@
   }
 
   body {
-    @apply bg-white text-slate-800 font-sans antialiased;
+    @apply bg-white text-slate-800 font-sans antialiased dark:bg-slate-950 dark:text-slate-200;
     font-feature-settings: 'cv11', 'ss01', 'ss03';
   }
 
@@ -21,8 +21,15 @@
     color: #172554;
   }
 
+  @media (prefers-color-scheme: dark) {
+    ::selection {
+      background-color: rgba(147, 197, 253, 0.25);
+      color: #e2e8f0;
+    }
+  }
+
   a {
-    @apply text-navy underline-offset-4 hover:underline;
+    @apply text-navy underline-offset-4 hover:underline dark:text-sky-300;
   }
 }
 
@@ -32,11 +39,11 @@
   }
 
   .resume-name {
-    @apply text-center text-3xl sm:text-4xl font-bold tracking-tight text-navy-deep;
+    @apply text-center text-3xl sm:text-4xl font-bold tracking-tight text-navy-deep dark:text-slate-100;
   }
 
   .resume-contact {
-    @apply mt-1.5 text-center text-sm text-slate-600;
+    @apply mt-1.5 text-center text-sm text-slate-600 dark:text-slate-400;
   }
 
   .resume-section {
@@ -44,22 +51,22 @@
   }
 
   .resume-section-title {
-    @apply text-lg font-bold text-navy pb-1 border-b border-slate-200;
+    @apply text-lg font-bold text-navy pb-1 border-b border-slate-200 dark:text-sky-300 dark:border-slate-800;
   }
 
   .resume-role-header {
-    @apply font-bold text-navy;
+    @apply font-bold text-navy dark:text-sky-300;
   }
 
   .resume-role-title {
-    @apply italic text-slate-700;
+    @apply italic text-slate-700 dark:text-slate-300;
   }
 
   .resume-meta {
-    @apply text-sm text-slate-500;
+    @apply text-sm text-slate-500 dark:text-slate-400;
   }
 
   .resume-bullets {
-    @apply mt-1.5 space-y-1 list-disc pl-5 marker:text-slate-400;
+    @apply mt-1.5 space-y-1 list-disc pl-5 marker:text-slate-400 dark:marker:text-slate-600;
   }
 }
