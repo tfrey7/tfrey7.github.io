@@ -49,6 +49,28 @@
         "sheet": "somersault-hero-landing.png",
         "atlas": "somersault-hero-landing.atlas.json"
       }
+    },
+    "jetpack-arrival-v1": {
+      "spritesheetId": "cmoyzqgzx00cot902elxfofi9",
+      "note": "Misfire — AI interpreted 'rocket pack' as a handheld flamethrower; character stays on ground firing flames forward. Replaced by v2.",
+      "files": {
+        "sheet": "jetpack-arrival.png",
+        "atlas": "jetpack-arrival.atlas.json"
+      }
+    },
+    "jetpack-arrival-v2": {
+      "spritesheetId": "cmoyzszkd003456olvrm1sm14",
+      "kind": "custom",
+      "direction": "right",
+      "frameWidth": 256,
+      "frameHeight": 256,
+      "frameCount": 25,
+      "columns": 5,
+      "note": "Pack is back-mounted now (fixed v1's handheld issue) but character never goes airborne — AI keeps him rooted to the baseline doing turns/steps with occasional flame puffs. Limit of prompt-painted approach. To do this properly: generate a 'Tim hovering with jet pack' base via gpt-image-1, upload as a character variant, animate from there.",
+      "files": {
+        "sheet": "jetpack-arrival-v2.png",
+        "atlas": "jetpack-arrival-v2.atlas.json"
+      }
     }
   }
 }
