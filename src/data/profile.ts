@@ -38,7 +38,7 @@ export type Contact = {
 export const contact: Contact = {
   name: 'Timothy J. Frey',
   location: 'New York, NY',
-  email: 'tfrey7@gmail.com',
+  email: 'me@tfrey7.com',
   github: 'https://github.com/tfrey7',
   // resumeUrl: '/personal-profile/resume.pdf',   // TODO: drop into public/resume.pdf to enable
 };
