@@ -95,10 +95,34 @@ const contactBits = [
   let cascading = false;
 
   function fall(el: HTMLElement, direction: Direction, delay: number) {
-    const magnitude = 28 + Math.random() * 28;
-    const signed = direction === 'right' ? magnitude : -magnitude;
-    el.style.setProperty('--fall-angle', `${signed}deg`);
-    el.style.setProperty('--fall-origin', direction === 'right' ? '0% 100%' : '100% 100%');
+    const fallsOff = Math.random() < 0.22;
+
+    if (fallsOff) {
+      // Spins off the section: heavy rotation + translate past the bottom edge.
+      const sideBias = direction === 'right' ? 1 : -1;
+      const spinSign = Math.random() < 0.6 ? sideBias : -sideBias;
+      const spinMagnitude = 220 + Math.random() * 540;
+      const fallX = sideBias * Math.random() * 180;
+      const fallY = 320 + Math.random() * 360;
+      const duration = 0.75 + Math.random() * 0.4;
+
+      el.style.setProperty('--fall-angle', `${spinSign * spinMagnitude}deg`);
+      el.style.setProperty('--fall-x', `${fallX}px`);
+      el.style.setProperty('--fall-y', `${fallY}px`);
+      el.style.setProperty('--fall-duration', `${duration}s`);
+      el.classList.add('is-falling-off');
+    } else {
+      // Tip-over: wider angle range + occasional sideways slide + varied speed.
+      const magnitude = 22 + Math.random() * 78;
+      const signed = direction === 'right' ? magnitude : -magnitude;
+      const slide = Math.random() < 0.4 ? (Math.random() - 0.5) * 16 : 0;
+      const duration = 0.32 + Math.random() * 0.4;
+
+      el.style.setProperty('--fall-angle', `${signed}deg`);
+      el.style.setProperty('--fall-origin', direction === 'right' ? '0% 100%' : '100% 100%');
+      el.style.setProperty('--fall-duration', `${duration}s`);
+      if (slide !== 0) el.style.setProperty('--fall-x', `${slide}px`);
+    }
 
     window.setTimeout(() => {
       if (el.classList.contains('is-fallen')) return;
@@ -112,17 +136,44 @@ const contactBits = [
     cascading = true;
 
     const items = Array.from(stage.querySelectorAll<HTMLElement>('.skill-item'));
-    items.forEach((el) => {
-      const r = el.getBoundingClientRect();
-      const cx = (r.left + r.right) / 2;
-      const cy = (r.top + r.bottom) / 2;
-      const dx = cx - clickX;
-      const dy = cy - clickY;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      const delay = dist * 0.9 + Math.random() * 80;
-      const direction: Direction = dx >= 0 ? 'right' : 'left';
-      fall(el, direction, delay);
+
+    // Rank items by distance from click — nearest will fall first.
+    const ranked = items
+      .map((el) => {
+        const r = el.getBoundingClientRect();
+        const cx = (r.left + r.right) / 2;
+        const cy = (r.top + r.bottom) / 2;
+        const dx = cx - clickX;
+        const dy = cy - clickY;
+        return {
+          el,
+          dist: Math.sqrt(dx * dx + dy * dy),
+          direction: (dx >= 0 ? 'right' : 'left') as Direction,
+        };
+      })
+      .sort((a, b) => a.dist - b.dist);
+
+    // Spreading-panic pacing: 1 falls, beat, another, then 2, 3, 5, then domino.
+    const waveSizes = [1, 1, 2, 3, 5];
+    const waveDelays = [0, 320, 540, 700, 830];
+    const FINAL_BASE = 950;
+    const FINAL_STAGGER = 45;
+
+    let cursor = 0;
+    waveSizes.forEach((size, w) => {
+      for (let j = 0; j < size && cursor < ranked.length; j++, cursor++) {
+        const { el, direction } = ranked[cursor];
+        fall(el, direction, waveDelays[w] + Math.random() * 50);
+      }
     });
+
+    let extra = 0;
+    while (cursor < ranked.length) {
+      const { el, direction } = ranked[cursor];
+      fall(el, direction, FINAL_BASE + extra * FINAL_STAGGER + Math.random() * 35);
+      cursor++;
+      extra++;
+    }
   }
 
   function scheduleFix() {
@@ -141,14 +192,18 @@ const contactBits = [
 
     stage.classList.add('is-fixing');
 
-    window.setTimeout(() => spawnPuffs(stage, 12), CURTAIN_CLOSE_MS - 60);
+    window.setTimeout(() => spawnSparks(stage, 16), CURTAIN_CLOSE_MS - 110);
+    window.setTimeout(() => spawnPuffs(stage, 22), CURTAIN_CLOSE_MS - 80);
 
     window.setTimeout(() => {
       fallen.forEach((el) => {
         el.style.transition = 'none';
-        el.classList.remove('is-fallen');
+        el.classList.remove('is-fallen', 'is-falling-off');
         el.style.removeProperty('--fall-angle');
         el.style.removeProperty('--fall-origin');
+        el.style.removeProperty('--fall-x');
+        el.style.removeProperty('--fall-y');
+        el.style.removeProperty('--fall-duration');
         void el.offsetHeight;
         el.style.transition = '';
       });
@@ -160,23 +215,93 @@ const contactBits = [
     }, CURTAIN_CLOSE_MS + CURTAIN_HOLD_MS);
   }
 
-  function spawnPuffs(stageEl: HTMLElement, count: number) {
+  function spawnSparks(stageEl: HTMLElement, count: number) {
+    // Sparks erupt at the seam impact in a single tight burst, then arc + fall.
     for (let i = 0; i < count; i++) {
       window.setTimeout(() => {
-        const puff = document.createElement('div');
-        puff.className = 'skills-puff';
-        puff.style.left = `${42 + Math.random() * 16}%`;
-        puff.style.top = `${10 + Math.random() * 80}%`;
-        puff.style.setProperty('--puff-size', `${22 + Math.random() * 36}px`);
-        puff.style.setProperty('--puff-drift-x', `${(Math.random() - 0.5) * 60}px`);
-        puff.style.setProperty('--puff-drift-y', `${-20 - Math.random() * 30}px`);
-        stageEl.appendChild(puff);
-        window.setTimeout(() => puff.remove(), 900);
-      }, i * 60);
+        const side: -1 | 1 = Math.random() < 0.5 ? -1 : 1;
+        const left = 50 + side * Math.random() * 1.5;
+        const top = 35 + Math.random() * 30;
+
+        const spark = document.createElement('div');
+        spark.className = 'skills-spark';
+        spark.style.left = `${left}%`;
+        spark.style.top = `${top}%`;
+
+        // Outward velocity is mostly horizontal with a touch of upward arc.
+        const speed = 50 + Math.random() * 90;
+        const x = side * speed;
+        const apexY = -(15 + Math.random() * 35);
+        const fallY = 40 + Math.random() * 70;
+        const size = 2 + Math.random() * 3;
+        const duration = 500 + Math.random() * 250;
+
+        spark.style.setProperty('--spark-x', `${x}px`);
+        spark.style.setProperty('--spark-apex-y', `${apexY}px`);
+        spark.style.setProperty('--spark-fall-y', `${fallY}px`);
+        spark.style.setProperty('--spark-size', `${size}px`);
+        spark.style.setProperty('--spark-duration', `${duration}ms`);
+
+        stageEl.appendChild(spark);
+        window.setTimeout(() => spark.remove(), duration + 50);
+      }, Math.random() * 60);
     }
   }
 
+  function spawnPuffs(stageEl: HTMLElement, count: number) {
+    // Front-loaded eruption: most puffs in the first ~180ms, the rest trail off.
+    const burstCount = Math.ceil(count * 0.65);
+    for (let i = 0; i < count; i++) {
+      const inBurst = i < burstCount;
+      const delay = inBurst
+        ? Math.random() * 180
+        : 180 + (i - burstCount) * 70 + Math.random() * 50;
+
+      window.setTimeout(() => {
+        const isBack = i % 2 === 0;
+        // Bias position toward the seam center; back puffs spread a touch wider.
+        const sideRoll = Math.random();
+        const side: -1 | 1 = sideRoll < 0.5 ? -1 : 1;
+        const horizontalSpread = isBack ? 10 : 7;
+        const left = 50 + side * (1 + Math.random() * horizontalSpread);
+        const top = 18 + Math.random() * 64;
+
+        const puff = document.createElement('div');
+        puff.className = isBack ? 'skills-puff skills-puff--back' : 'skills-puff';
+        puff.style.left = `${left}%`;
+        puff.style.top = `${top}%`;
+
+        const size = isBack
+          ? 56 + Math.random() * 60
+          : 30 + Math.random() * 40;
+        // Drift outward from seam (away from center) and upward.
+        const driftX = side * (20 + Math.random() * 70);
+        const driftY = -(40 + Math.random() * 60);
+        const rotate = side * (10 + Math.random() * 50);
+        const scaleEnd = isBack ? 2.2 + Math.random() * 0.6 : 1.6 + Math.random() * 0.5;
+
+        puff.style.setProperty('--puff-size', `${size}px`);
+        puff.style.setProperty('--puff-drift-x', `${driftX}px`);
+        puff.style.setProperty('--puff-drift-y', `${driftY}px`);
+        puff.style.setProperty('--puff-rotate', `${rotate}deg`);
+        puff.style.setProperty('--puff-scale-end', `${scaleEnd}`);
+
+        stageEl.appendChild(puff);
+        window.setTimeout(() => puff.remove(), isBack ? 1500 : 1150);
+      }, delay);
+    }
+  }
+
+  let autoTriggerArmed = true;
+
+  stage?.addEventListener('mouseenter', (e) => {
+    if (!autoTriggerArmed) return;
+    autoTriggerArmed = false;
+    startCascade(e.clientX, e.clientY);
+  });
+
   stage?.addEventListener('click', (e) => {
+    autoTriggerArmed = false;
     startCascade(e.clientX, e.clientY);
   });
 </script>
