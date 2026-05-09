@@ -21,5 +21,9 @@ pnpm-debug.log*
 .vscode/*
 .idea/
 
+# claude code (local-only; shared config can still be committed explicitly)
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
+
 # macOS
 .DS_Store

@@ -13,7 +13,12 @@ const contactBits = [
   <main class="resume">
     <!-- Header -->
     <header>
-      <h1 class="resume-name">{contact.name.toUpperCase()}</h1>
+      <h1 class="resume-name">
+        <span class="resume-name-inner">
+          {contact.name.toUpperCase()}
+          <span class="name-avatar" aria-hidden="true"></span>
+        </span>
+      </h1>
       <p class="resume-contact">
         {contactBits.join(' • ')}
         {' • '}
@@ -551,5 +556,27 @@ const contactBits = [
     const ctx = getAudioCtx();
     if (ctx?.state === 'suspended') ctx.resume().catch(() => {});
     startCascade(e.clientX, e.clientY);
+  });
+
+  // Name click → avatar pops in next to the name and gives a peace sign.
+  // Total animation = 2s play + 1s hold/fade.
+  const nameInner = document.querySelector<HTMLElement>('.resume-name-inner');
+  const nameAvatar = nameInner?.querySelector<HTMLElement>('.name-avatar') ?? null;
+  const NAME_AVATAR_TOTAL_MS = 3000;
+  let nameAvatarTimer: number | null = null;
+
+  nameInner?.addEventListener('click', () => {
+    if (!nameAvatar) return;
+    if (nameAvatarTimer !== null) {
+      window.clearTimeout(nameAvatarTimer);
+      nameAvatar.classList.remove('is-playing');
+      // Force reflow so re-adding the class restarts the animation.
+      void nameAvatar.offsetHeight;
+    }
+    nameAvatar.classList.add('is-playing');
+    nameAvatarTimer = window.setTimeout(() => {
+      nameAvatar.classList.remove('is-playing');
+      nameAvatarTimer = null;
+    }, NAME_AVATAR_TOTAL_MS);
   });
 </script>

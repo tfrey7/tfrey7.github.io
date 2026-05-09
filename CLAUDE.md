@@ -26,16 +26,5 @@ For now, fixes happen automatically (the page appears to repair itself). Once th
 
 ## Reserved / off-limits
 
-- **The name** ("Tim Frey") is reserved for the avatar reveal. No generic interaction on it in the meantime.
 - **Sound** off by default. If added later, it's opt-in or only triggered on direct click — never autoplay.
 - **No layout shifts** that affect surrounding content. Animations stay within the element's bounding box.
-
-## Interaction catalog
-
-Element → idea → status (`proposed` / `building` / `built` / `retired`).
-
-- **Technical Skills block** → click *anywhere* in the block (heading, gap, comma, item) triggers a single radial cascade: every item falls in a wave that ripples outward from the click point. ~1.2s after the wave settles, a stage curtain slides in from both sides, smoke puffs erupt at the seam, items snap back upright behind the curtain, then the curtain opens. → `building` (curtain stands in for the avatar's eventual fix routine — once he's ready, he should run out and "bring" the curtain rather than it appearing on its own)
-- **Year / date range** → digits scramble or glitch briefly, then snap back to the correct value → `proposed`
-- **Name "Tim Frey"** → avatar pokes out from behind the text → `blocked on avatar art`
-
-Add new ideas here as we discuss them.

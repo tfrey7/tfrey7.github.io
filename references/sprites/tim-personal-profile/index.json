@@ -1,0 +1,54 @@
+{
+  "characterId": "cmoyxwhqf003kpweoehmvosoh",
+  "characterName": "tim-personal-profile",
+  "poses": {
+    "Original": "cmoyxwhrb003mpweo0lws0877"
+  },
+  "spritesheets": {
+    "peace-sign": {
+      "spritesheetId": "cmoyz85ws003lccemwntf7ui5",
+      "kind": "custom",
+      "direction": "right",
+      "frameWidth": 256,
+      "frameHeight": 256,
+      "frameCount": 25,
+      "columns": 5,
+      "firstFramePoseId": "cmoyxwhrb003mpweo0lws0877",
+      "files": {
+        "sheet": "peace-sign.png",
+        "atlas": "peace-sign.atlas.json"
+      }
+    },
+    "peace-sign-v1": {
+      "spritesheetId": "cmoyz1izo001mccem99hjdmdn",
+      "note": "Initial attempt — first 2 frames jumped to peace-sign before natural raise. Replaced by v2 (firstFramePoseId locked).",
+      "files": {
+        "sheet": "peace-sign-v1.png",
+        "atlas": "peace-sign-v1.atlas.json"
+      }
+    },
+    "somersault-hero-landing": {
+      "spritesheetId": "cmoyzl1gl000f56olkaa26nt3",
+      "kind": "custom",
+      "direction": "right",
+      "frameWidth": 256,
+      "frameHeight": 256,
+      "frameCount": 25,
+      "columns": 5,
+      "firstFramePoseId": "cmoyxwhrb003mpweo0lws0877",
+      "note": "Forward flip → kneeling landing. v2 fixed the rotation axis (head-over-heels, not vertical pirouette). Landing holds in a head-bowed kneel rather than a textbook fist-on-ground Marvel pose — close enough for queued use; lock a last_frame_pose_id if a sharper hero-pose end is needed.",
+      "files": {
+        "sheet": "somersault-hero-landing-v2.png",
+        "atlas": "somersault-hero-landing-v2.atlas.json"
+      }
+    },
+    "somersault-hero-landing-v1": {
+      "spritesheetId": "cmoyzfoj000gkt3ent5l701r7",
+      "note": "Misfire — vertical-axis pirouette spin instead of head-over-heels front flip. Replaced by v2 with explicit horizontal-rotation-axis prompt.",
+      "files": {
+        "sheet": "somersault-hero-landing.png",
+        "atlas": "somersault-hero-landing.atlas.json"
+      }
+    }
+  }
+}

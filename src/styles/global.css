@@ -43,6 +43,64 @@
     @apply text-center text-3xl sm:text-4xl font-bold tracking-tight text-navy-deep dark:text-slate-100;
   }
 
+  .resume-name-inner {
+    display: inline-block;
+    position: relative;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  /* peace-sign spritesheet — 1280x1280 sheet of 5x5 256px frames, displayed at 96px.
+     Two concurrent step()s walk the frame grid: X cycles cols 0..4 once per row,
+     Y advances rows 0..4 across the full duration. Plays once per click; the
+     fade animation outlasts X/Y so the final frame is held during the fade-out. */
+  .name-avatar {
+    position: absolute;
+    left: calc(100% + 12px);
+    top: 50%;
+    width: 96px;
+    height: 96px;
+    background-image: url('/sprites/tim/peace-sign.png');
+    background-size: 480px 480px;
+    background-position: 0 0;
+    background-repeat: no-repeat;
+    image-rendering: pixelated;
+    pointer-events: none;
+    opacity: 0;
+    transform: translateY(-50%);
+  }
+
+  .name-avatar.is-playing {
+    animation:
+      name-avatar-x 0.4s steps(5, jump-none) 5 forwards,
+      name-avatar-y 2s steps(5, jump-none) 1 forwards,
+      name-avatar-fade 3s ease-out 1 forwards;
+  }
+
+  @keyframes name-avatar-x {
+    from { background-position-x: 0; }
+    to { background-position-x: -384px; }
+  }
+
+  @keyframes name-avatar-y {
+    from { background-position-y: 0; }
+    to { background-position-y: -384px; }
+  }
+
+  @keyframes name-avatar-fade {
+    0%   { opacity: 0; transform: translate(-4px, -50%) scale(0.85); }
+    8%   { opacity: 1; transform: translate(0, -50%) scale(1); }
+    72%  { opacity: 1; transform: translate(0, -50%) scale(1); }
+    100% { opacity: 0; transform: translate(0, -50%) scale(1); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .name-avatar.is-playing {
+      background-position: -384px -384px;
+      animation: name-avatar-fade 2.4s ease-out 1 forwards;
+    }
+  }
+
   .resume-contact {
     @apply mt-1.5 text-center text-sm text-slate-600 dark:text-slate-400;
   }
