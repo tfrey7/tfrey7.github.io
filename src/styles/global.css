@@ -28,7 +28,7 @@
 
 @layer components {
   .resume {
-    @apply mx-auto w-full max-w-page px-6 sm:px-8 py-12 sm:py-16;
+    @apply mx-auto w-full max-w-page px-6 sm:px-8 py-8 sm:py-10;
   }
 
   .resume-name {
@@ -36,11 +36,11 @@
   }
 
   .resume-contact {
-    @apply mt-2 text-center text-sm text-slate-600;
+    @apply mt-1.5 text-center text-sm text-slate-600;
   }
 
   .resume-section {
-    @apply mt-10;
+    @apply mt-6;
   }
 
   .resume-section-title {
@@ -60,6 +60,6 @@
   }
 
   .resume-bullets {
-    @apply mt-2 space-y-1.5 list-disc pl-5 marker:text-slate-400;
+    @apply mt-1.5 space-y-1 list-disc pl-5 marker:text-slate-400;
   }
 }
