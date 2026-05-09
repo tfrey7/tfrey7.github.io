@@ -1,8 +1,8 @@
-# personal-profile
+# tfrey7.github.io
 
 Personal profile site for Tim Frey — a static Astro + Svelte site deployed to GitHub Pages.
 
-**Live:** https://tfrey7.github.io/personal-profile/
+**Live:** https://tfrey7.github.io/
 
 ## Stack
 
@@ -15,7 +15,7 @@ Personal profile site for Tim Frey — a static Astro + Svelte site deployed to 
 
 ```bash
 npm install
-npm run dev      # http://localhost:4321/personal-profile/
+npm run dev      # http://localhost:4321/
 npm run build    # static build to dist/
 npm run preview  # serve the production build locally
 ```
