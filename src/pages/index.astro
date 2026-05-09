@@ -41,8 +41,10 @@ const contactBits = [
         }
       </ul>
 
-      <div class="skills-curtain skills-curtain-left" aria-hidden="true"></div>
-      <div class="skills-curtain skills-curtain-right" aria-hidden="true"></div>
+      <div class="skills-curtain-mask" aria-hidden="true">
+        <div class="skills-curtain skills-curtain-left"></div>
+        <div class="skills-curtain skills-curtain-right"></div>
+      </div>
     </section>
 
     <!-- Experience -->
@@ -94,16 +96,178 @@ const contactBits = [
   let fixTimer: number | null = null;
   let cascading = false;
 
-  function fall(el: HTMLElement, direction: Direction, delay: number) {
-    const fallsOff = Math.random() < 0.22;
+  // Lazy AudioContext — browsers require a user gesture before it can produce
+  // sound, so the first-hover cascade silently no-ops here (per CLAUDE.md's
+  // "no autoplay" rule). After the first click anywhere, blinks play.
+  let audioCtx: AudioContext | null = null;
+  function getAudioCtx(): AudioContext | null {
+    if (audioCtx) return audioCtx;
+    const Ctor = window.AudioContext || (window as any).webkitAudioContext;
+    if (!Ctor) return null;
+    try {
+      audioCtx = new Ctor();
+      return audioCtx;
+    } catch {
+      return null;
+    }
+  }
+
+  function playBoink(intensity: number) {
+    const ctx = getAudioCtx();
+    if (!ctx) return;
+    if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+    if (ctx.state !== 'running') return;
+
+    const now = ctx.currentTime;
+    const basePitch = 280 + Math.random() * 320;
+    const endPitch = basePitch * (0.32 + Math.random() * 0.18);
+    const pitchDuration = 0.07 + Math.random() * 0.05;
+    const totalDuration = 0.18 + intensity * 0.18;
+    const peakGain = 0.04 + intensity * 0.20;
+
+    // Triangle for cartoony body. Pitch dips low, snaps up to peak, drops fast
+    // — the "BO-ink" cadence.
+    const osc = ctx.createOscillator();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(basePitch * 0.78, now);
+    osc.frequency.linearRampToValueAtTime(basePitch, now + 0.012);
+    osc.frequency.exponentialRampToValueAtTime(endPitch, now + pitchDuration);
+
+    // Lowpass opens with intensity → brighter, more aggressive at the climax.
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.value = 700 + intensity * 1800;
+
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(peakGain, now + 0.005);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + totalDuration);
+
+    osc.connect(filter).connect(gain).connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + totalDuration + 0.02);
+
+    // High-intensity boinks get a quick noise transient for the "thunk" of impact.
+    if (intensity > 0.45) {
+      const noiseDur = 0.045;
+      const buffer = ctx.createBuffer(1, Math.floor(ctx.sampleRate * noiseDur), ctx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < data.length; i++) {
+        data[i] = (Math.random() * 2 - 1) * (1 - i / data.length);
+      }
+      const noiseSrc = ctx.createBufferSource();
+      noiseSrc.buffer = buffer;
+
+      const noiseFilter = ctx.createBiquadFilter();
+      noiseFilter.type = 'lowpass';
+      noiseFilter.frequency.value = 600 + intensity * 900;
+
+      const noiseGain = ctx.createGain();
+      const noisePeak = (intensity - 0.4) * 0.14;
+      noiseGain.gain.setValueAtTime(noisePeak, now);
+      noiseGain.gain.exponentialRampToValueAtTime(0.0001, now + noiseDur);
+
+      noiseSrc.connect(noiseFilter).connect(noiseGain).connect(ctx.destination);
+      noiseSrc.start(now);
+      noiseSrc.stop(now + noiseDur);
+    }
+  }
+
+  function playWrench(duration: number) {
+    const ctx = getAudioCtx();
+    if (!ctx) return;
+    if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+    if (ctx.state !== 'running') return;
+
+    const now = ctx.currentTime;
+
+    // Carrier — buzzy square wave, motor spool up at start, wind down at end.
+    const carrier = ctx.createOscillator();
+    carrier.type = 'square';
+    carrier.frequency.setValueAtTime(680, now);
+    carrier.frequency.linearRampToValueAtTime(880, now + Math.min(0.08, duration * 0.2));
+    carrier.frequency.setValueAtTime(880, now + Math.max(0, duration - 0.1));
+    carrier.frequency.linearRampToValueAtTime(520, now + duration);
+
+    const carrierFilter = ctx.createBiquadFilter();
+    carrierFilter.type = 'lowpass';
+    carrierFilter.frequency.value = 2200;
+
+    // White noise layer for mechanical chatter.
+    const noiseSamples = Math.floor(ctx.sampleRate * duration);
+    const noiseBuf = ctx.createBuffer(1, noiseSamples, ctx.sampleRate);
+    const noiseData = noiseBuf.getChannelData(0);
+    for (let i = 0; i < noiseSamples; i++) noiseData[i] = Math.random() * 2 - 1;
+    const noise = ctx.createBufferSource();
+    noise.buffer = noiseBuf;
+
+    const noiseFilter = ctx.createBiquadFilter();
+    noiseFilter.type = 'bandpass';
+    noiseFilter.frequency.value = 1700;
+    noiseFilter.Q.value = 1.2;
+
+    const carrierGain = ctx.createGain();
+    carrierGain.gain.value = 0.7;
+    const noiseGain = ctx.createGain();
+    noiseGain.gain.value = 0.35;
+
+    // LFO at ~28Hz creates the rapid hammer-pulse "bzzzt" character.
+    // Sawtooth LFO range -1..1 → mapped to 0.05..1 via gain (0.475) + offset (0.525).
+    const lfo = ctx.createOscillator();
+    lfo.type = 'sawtooth';
+    lfo.frequency.value = 28;
+
+    const lfoScale = ctx.createGain();
+    lfoScale.gain.value = 0.475;
+
+    const offset = ctx.createConstantSource();
+    offset.offset.value = 0.525;
+
+    const pulseGain = ctx.createGain();
+    pulseGain.gain.value = 0;
+    lfo.connect(lfoScale).connect(pulseGain.gain);
+    offset.connect(pulseGain.gain);
+
+    // Master envelope.
+    const master = ctx.createGain();
+    master.gain.setValueAtTime(0, now);
+    master.gain.linearRampToValueAtTime(0.18, now + 0.025);
+    master.gain.setValueAtTime(0.18, now + Math.max(0.03, duration - 0.06));
+    master.gain.linearRampToValueAtTime(0, now + duration);
+
+    carrier.connect(carrierFilter).connect(carrierGain).connect(pulseGain);
+    noise.connect(noiseFilter).connect(noiseGain).connect(pulseGain);
+    pulseGain.connect(master).connect(ctx.destination);
+
+    const stop = now + duration + 0.05;
+    carrier.start(now);
+    noise.start(now);
+    lfo.start(now);
+    offset.start(now);
+    carrier.stop(stop);
+    noise.stop(stop);
+    lfo.stop(stop);
+    offset.stop(stop);
+  }
+
+  function fall(el: HTMLElement, direction: Direction, delay: number, intensity: number) {
+    // Roll a tip angle first; if it exceeds the tipping point, gravity wins and
+    // the item falls all the way off instead of hanging mid-rotation past the
+    // curtain's coverage.
+    const tipAngle = 22 + Math.random() * 78;
+    const TIPPING_POINT = 62;
+    const fallsOff = Math.random() < 0.22 || tipAngle > TIPPING_POINT;
 
     if (fallsOff) {
-      // Spins off the section: heavy rotation + translate past the bottom edge.
+      // Spins off the section: heavy rotation + translate past the viewport
+      // bottom so the item is fully off-screen by the time cleanup snaps it back.
       const sideBias = direction === 'right' ? 1 : -1;
       const spinSign = Math.random() < 0.6 ? sideBias : -sideBias;
       const spinMagnitude = 220 + Math.random() * 540;
       const fallX = sideBias * Math.random() * 180;
-      const fallY = 320 + Math.random() * 360;
+      const rect = el.getBoundingClientRect();
+      const distanceToBottom = Math.max(0, window.innerHeight - rect.bottom);
+      const fallY = distanceToBottom + 140 + Math.random() * 220;
       const duration = 0.75 + Math.random() * 0.4;
 
       el.style.setProperty('--fall-angle', `${spinSign * spinMagnitude}deg`);
@@ -112,9 +276,7 @@ const contactBits = [
       el.style.setProperty('--fall-duration', `${duration}s`);
       el.classList.add('is-falling-off');
     } else {
-      // Tip-over: wider angle range + occasional sideways slide + varied speed.
-      const magnitude = 22 + Math.random() * 78;
-      const signed = direction === 'right' ? magnitude : -magnitude;
+      const signed = direction === 'right' ? tipAngle : -tipAngle;
       const slide = Math.random() < 0.4 ? (Math.random() - 0.5) * 16 : 0;
       const duration = 0.32 + Math.random() * 0.4;
 
@@ -127,6 +289,7 @@ const contactBits = [
     window.setTimeout(() => {
       if (el.classList.contains('is-fallen')) return;
       el.classList.add('is-fallen');
+      playBoink(intensity);
       scheduleFix();
     }, delay);
   }
@@ -154,8 +317,10 @@ const contactBits = [
       .sort((a, b) => a.dist - b.dist);
 
     // Spreading-panic pacing: 1 falls, beat, another, then 2, 3, 5, then domino.
+    // Intensity rises with each wave so the boinks build from soft to crashing.
     const waveSizes = [1, 1, 2, 3, 5];
     const waveDelays = [0, 320, 540, 700, 830];
+    const waveIntensity = [0.05, 0.18, 0.32, 0.5, 0.7];
     const FINAL_BASE = 950;
     const FINAL_STAGGER = 45;
 
@@ -163,14 +328,17 @@ const contactBits = [
     waveSizes.forEach((size, w) => {
       for (let j = 0; j < size && cursor < ranked.length; j++, cursor++) {
         const { el, direction } = ranked[cursor];
-        fall(el, direction, waveDelays[w] + Math.random() * 50);
+        fall(el, direction, waveDelays[w] + Math.random() * 50, waveIntensity[w]);
       }
     });
 
+    const remaining = ranked.length - cursor;
     let extra = 0;
     while (cursor < ranked.length) {
       const { el, direction } = ranked[cursor];
-      fall(el, direction, FINAL_BASE + extra * FINAL_STAGGER + Math.random() * 35);
+      // Final domino climbs from 0.85 → 1.0 across its items.
+      const finalIntensity = 0.85 + (remaining > 1 ? (extra / (remaining - 1)) * 0.15 : 0);
+      fall(el, direction, FINAL_BASE + extra * FINAL_STAGGER + Math.random() * 35, finalIntensity);
       cursor++;
       extra++;
     }
@@ -192,8 +360,12 @@ const contactBits = [
 
     stage.classList.add('is-fixing');
 
-    window.setTimeout(() => spawnSparks(stage, 16), CURTAIN_CLOSE_MS - 110);
+    window.setTimeout(() => spawnSparks(stage, 28), CURTAIN_CLOSE_MS - 110);
     window.setTimeout(() => spawnPuffs(stage, 22), CURTAIN_CLOSE_MS - 80);
+    // F1 pit-stop wheel-gun: two short bursts ("buzz... buzz") around the
+    // sparks/smoke moment.
+    window.setTimeout(() => playWrench(0.34), CURTAIN_CLOSE_MS - 130);
+    window.setTimeout(() => playWrench(0.32), CURTAIN_CLOSE_MS + 230);
 
     window.setTimeout(() => {
       fallen.forEach((el) => {
@@ -215,36 +387,119 @@ const contactBits = [
     }, CURTAIN_CLOSE_MS + CURTAIN_HOLD_MS);
   }
 
+  type Spark = {
+    el: HTMLElement;
+    x: number;
+    y: number;
+    vx: number;
+    vy: number;
+    life: number;
+    maxLife: number;
+  };
+
+  const activeSparks: Spark[] = [];
+  let physicsFrame: number | null = null;
+  let physicsLastTime = 0;
+
   function spawnSparks(stageEl: HTMLElement, count: number) {
-    // Sparks erupt at the seam impact in a single tight burst, then arc + fall.
+    // Spawn at the curtain seam in viewport coords; sparks live in document.body
+    // (position: fixed) so they can fly anywhere on screen and bounce off the
+    // viewport edges, settling along the bottom of the window.
+    const rect = stageEl.getBoundingClientRect();
+    const seamX = rect.left + rect.width * 0.5;
+    const seamY = rect.top + rect.height * 0.5;
+    const seamYJitter = rect.height * 0.35;
+
     for (let i = 0; i < count; i++) {
       window.setTimeout(() => {
         const side: -1 | 1 = Math.random() < 0.5 ? -1 : 1;
-        const left = 50 + side * Math.random() * 1.5;
-        const top = 35 + Math.random() * 30;
+        const x = seamX + side * Math.random() * 4;
+        const y = seamY + (Math.random() - 0.5) * seamYJitter;
 
-        const spark = document.createElement('div');
-        spark.className = 'skills-spark';
-        spark.style.left = `${left}%`;
-        spark.style.top = `${top}%`;
+        // Bias velocity outward+up — at viewport scale they need horizontal
+        // momentum to ricochet across the screen, not just shoot straight up.
+        const speed = 480 + Math.random() * 720;
+        const angleDeg = 10 + Math.random() * 60;
+        const angleRad = (angleDeg * Math.PI) / 180;
+        const vx = side * Math.cos(angleRad) * speed;
+        const vy = -Math.sin(angleRad) * speed;
 
-        // Outward velocity is mostly horizontal with a touch of upward arc.
-        const speed = 50 + Math.random() * 90;
-        const x = side * speed;
-        const apexY = -(15 + Math.random() * 35);
-        const fallY = 40 + Math.random() * 70;
         const size = 2 + Math.random() * 3;
-        const duration = 500 + Math.random() * 250;
+        const maxLife = 1.4 + Math.random() * 1.0;
 
-        spark.style.setProperty('--spark-x', `${x}px`);
-        spark.style.setProperty('--spark-apex-y', `${apexY}px`);
-        spark.style.setProperty('--spark-fall-y', `${fallY}px`);
-        spark.style.setProperty('--spark-size', `${size}px`);
-        spark.style.setProperty('--spark-duration', `${duration}ms`);
+        const el = document.createElement('div');
+        el.className = 'skills-spark';
+        el.style.setProperty('--spark-size', `${size}px`);
+        el.style.transform = `translate(${x}px, ${y}px) translate(-50%, -50%)`;
+        el.style.opacity = '1';
+        document.body.appendChild(el);
 
-        stageEl.appendChild(spark);
-        window.setTimeout(() => spark.remove(), duration + 50);
+        activeSparks.push({ el, x, y, vx, vy, life: maxLife, maxLife });
+        ensurePhysicsLoop();
       }, Math.random() * 60);
+    }
+  }
+
+  function ensurePhysicsLoop() {
+    if (physicsFrame !== null) return;
+    physicsLastTime = performance.now();
+    physicsFrame = requestAnimationFrame(physicsTick);
+  }
+
+  function physicsTick(now: number) {
+    const dt = Math.min((now - physicsLastTime) / 1000, 1 / 30);
+    physicsLastTime = now;
+
+    const W = window.innerWidth;
+    const H = window.innerHeight;
+    const GRAVITY = 2400;
+    const RESTITUTION = 0.5;
+    const FRICTION = 0.84;
+
+    for (let i = activeSparks.length - 1; i >= 0; i--) {
+      const s = activeSparks[i];
+
+      s.vy += GRAVITY * dt;
+      s.x += s.vx * dt;
+      s.y += s.vy * dt;
+
+      if (s.y > H) {
+        s.y = H;
+        s.vy = -s.vy * RESTITUTION;
+        s.vx *= FRICTION;
+        if (Math.abs(s.vy) < 80) s.vy = 0;
+      }
+      if (s.y < 0) {
+        s.y = 0;
+        s.vy = -s.vy * RESTITUTION;
+      }
+      if (s.x < 0) {
+        s.x = 0;
+        s.vx = -s.vx * RESTITUTION;
+      }
+      if (s.x > W) {
+        s.x = W;
+        s.vx = -s.vx * RESTITUTION;
+      }
+
+      s.life -= dt;
+      const lifeFrac = Math.max(0, s.life / s.maxLife);
+      const opacity = lifeFrac < 0.3 ? lifeFrac / 0.3 : 1;
+      const scale = 0.7 + lifeFrac * 0.4;
+
+      s.el.style.transform = `translate(${s.x}px, ${s.y}px) translate(-50%, -50%) scale(${scale})`;
+      s.el.style.opacity = `${opacity}`;
+
+      if (s.life <= 0) {
+        s.el.remove();
+        activeSparks.splice(i, 1);
+      }
+    }
+
+    if (activeSparks.length > 0) {
+      physicsFrame = requestAnimationFrame(physicsTick);
+    } else {
+      physicsFrame = null;
     }
   }
 
@@ -292,16 +547,9 @@ const contactBits = [
     }
   }
 
-  let autoTriggerArmed = true;
-
-  stage?.addEventListener('mouseenter', (e) => {
-    if (!autoTriggerArmed) return;
-    autoTriggerArmed = false;
-    startCascade(e.clientX, e.clientY);
-  });
-
   stage?.addEventListener('click', (e) => {
-    autoTriggerArmed = false;
+    const ctx = getAudioCtx();
+    if (ctx?.state === 'suspended') ctx.resume().catch(() => {});
     startCascade(e.clientX, e.clientY);
   });
 </script>

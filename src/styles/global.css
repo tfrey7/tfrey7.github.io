@@ -14,6 +14,7 @@
   body {
     @apply bg-white text-slate-800 font-sans antialiased dark:bg-slate-950 dark:text-slate-200;
     font-feature-settings: 'cv11', 'ss01', 'ss03';
+    overflow-x: clip;
   }
 
   ::selection {
@@ -90,8 +91,15 @@
 
   .skills-stage {
     position: relative;
-    overflow: hidden;
     cursor: pointer;
+  }
+
+  .skills-curtain-mask {
+    position: absolute;
+    inset: 0 0 -140px 0;
+    overflow: hidden;
+    pointer-events: none;
+    z-index: 20;
   }
 
   .skills-stage.is-fixing {
@@ -189,46 +197,20 @@
   }
 
   .skills-spark {
-    position: absolute;
+    position: fixed;
+    top: 0;
+    left: 0;
     width: var(--spark-size, 3px);
     height: var(--spark-size, 3px);
     border-radius: 50%;
     pointer-events: none;
-    z-index: 22;
+    z-index: 9999;
     background: rgb(255, 248, 210);
     box-shadow:
       0 0 4px 1px rgba(255, 225, 130, 0.95),
       0 0 10px 2px rgba(255, 180, 70, 0.7),
       0 0 20px 5px rgba(255, 140, 30, 0.35);
-    transform: translate(-50%, -50%) scale(0.3);
-    opacity: 0;
     will-change: transform, opacity;
-    animation: skills-spark var(--spark-duration, 0.65s) cubic-bezier(0.18, 0.55, 0.42, 1) forwards;
-  }
-
-  @keyframes skills-spark {
-    0% {
-      opacity: 0;
-      transform: translate(-50%, -50%) scale(0.3);
-    }
-    10% {
-      opacity: 1;
-      transform:
-        translate(calc(-50% + var(--spark-x, 0px) * 0.18), calc(-50% + var(--spark-apex-y, -10px) * 0.35))
-        scale(1);
-    }
-    45% {
-      opacity: 1;
-      transform:
-        translate(calc(-50% + var(--spark-x, 0px) * 0.55), calc(-50% + var(--spark-apex-y, -10px)))
-        scale(0.9);
-    }
-    100% {
-      opacity: 0;
-      transform:
-        translate(calc(-50% + var(--spark-x, 0px)), calc(-50% + var(--spark-fall-y, 30px)))
-        scale(0.5);
-    }
   }
 
   @media (prefers-color-scheme: dark) {
