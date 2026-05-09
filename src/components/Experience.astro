@@ -1,0 +1,39 @@
+---
+import { experience, education } from '../data/profile';
+---
+
+<section class="resume-section" aria-labelledby="experience-heading">
+  <h2 id="experience-heading" class="resume-section-title">Professional Experience</h2>
+
+  {
+    experience.map((role) => (
+      <article class="mt-5 first:mt-4">
+        <div class="flex flex-wrap items-baseline justify-between gap-x-3">
+          <h3 class="resume-role-header">
+            {role.company} <span class="font-normal text-slate-500">|</span>{' '}
+            <span class="font-normal">{role.location}</span>
+          </h3>
+        </div>
+        <div class="flex flex-wrap items-baseline justify-between gap-x-3">
+          <p class="resume-role-title">{role.title}</p>
+          <p class="resume-meta">{role.start} – {role.end}</p>
+        </div>
+        {role.bullets.length > 0 && (
+          <ul class="resume-bullets">
+            {role.bullets.map((b) => (
+              <li>{b}</li>
+            ))}
+          </ul>
+        )}
+      </article>
+    ))
+  }
+
+  <article class="mt-5">
+    <h3 class="resume-role-header">
+      {education.school} <span class="font-normal text-slate-500">|</span>{' '}
+      <span class="font-normal">{education.location}</span>
+    </h3>
+    <p class="resume-role-title">{education.degree}</p>
+  </article>
+</section>

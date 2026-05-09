@@ -1,0 +1,15 @@
+---
+import Base from '../layouts/Base.astro';
+import Header from '../components/Header.astro';
+import Skills from '../components/Skills.astro';
+import Experience from '../components/Experience.astro';
+import { contact } from '../data/profile';
+---
+
+<Base title={`${contact.name} — Resume`}>
+  <main class="resume">
+    <Header />
+    <Skills />
+    <Experience />
+  </main>
+</Base>

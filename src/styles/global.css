@@ -1,0 +1,65 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-white text-slate-800 font-sans antialiased;
+    font-feature-settings: 'cv11', 'ss01', 'ss03';
+  }
+
+  ::selection {
+    background-color: rgba(30, 58, 138, 0.18);
+    color: #172554;
+  }
+
+  a {
+    @apply text-navy underline-offset-4 hover:underline;
+  }
+}
+
+@layer components {
+  .resume {
+    @apply mx-auto w-full max-w-page px-6 sm:px-8 py-12 sm:py-16;
+  }
+
+  .resume-name {
+    @apply text-center text-3xl sm:text-4xl font-bold tracking-tight text-navy-deep;
+  }
+
+  .resume-contact {
+    @apply mt-2 text-center text-sm text-slate-600;
+  }
+
+  .resume-section {
+    @apply mt-10;
+  }
+
+  .resume-section-title {
+    @apply text-lg font-bold text-navy pb-1 border-b border-slate-200;
+  }
+
+  .resume-role-header {
+    @apply font-bold text-navy;
+  }
+
+  .resume-role-title {
+    @apply italic text-slate-700;
+  }
+
+  .resume-meta {
+    @apply text-sm text-slate-500;
+  }
+
+  .resume-bullets {
+    @apply mt-2 space-y-1.5 list-disc pl-5 marker:text-slate-400;
+  }
+}
