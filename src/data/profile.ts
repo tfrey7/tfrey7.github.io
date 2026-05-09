@@ -32,17 +32,14 @@ export type Contact = {
   email: string;
   phone?: string;
   github: string;
-  linkedin?: string;
   resumeUrl?: string;
 };
 
 export const contact: Contact = {
   name: 'Timothy J. Frey',
-  location: 'Whitestone, NY',
+  location: 'New York, NY',
   email: 'tfrey7@gmail.com',
-  phone: '917-796-3484',
   github: 'https://github.com/tfrey7',
-  // linkedin: 'https://www.linkedin.com/in/...',  // TODO: add once provided
   // resumeUrl: '/personal-profile/resume.pdf',   // TODO: drop into public/resume.pdf to enable
 };
 
