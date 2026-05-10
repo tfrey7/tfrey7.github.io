@@ -1,0 +1,195 @@
+---
+import Base from '../layouts/Base.astro';
+---
+
+<Base title="Portal — preview">
+  <main class="portal-demo">
+    <h1 class="portal-demo-title">Portal arrival animation</h1>
+
+    <div class="portal-stage">
+      <div class="portal" id="portal" aria-hidden="true">
+        <div class="portal-glow"></div>
+        <div class="portal-swirl"></div>
+        <div class="portal-rim"></div>
+        <div class="portal-core"></div>
+      </div>
+    </div>
+
+    <div class="portal-controls">
+      <button id="portal-toggle" type="button">Open portal</button>
+      <label class="portal-checkbox">
+        <input type="checkbox" id="portal-loop" />
+        <span>Auto-loop</span>
+      </label>
+    </div>
+
+    <p class="portal-note">
+      Standalone preview. Open → hold (avatar arrival animation hooks here later) → close.
+      Cyan/magenta palette with CRT power-on cadence.
+    </p>
+  </main>
+</Base>
+
+<style>
+  .portal-demo {
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2rem;
+    padding: 2rem;
+  }
+
+  .portal-demo-title {
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: rgb(71, 85, 105);
+    letter-spacing: -0.01em;
+  }
+
+  .portal-controls {
+    display: flex;
+    gap: 1.25rem;
+    align-items: center;
+  }
+
+  .portal-controls button {
+    padding: 0.5rem 1rem;
+    border: 1px solid rgb(148, 163, 184);
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    font: inherit;
+    border-radius: 0.375rem;
+  }
+
+  .portal-controls button:hover {
+    background: rgba(148, 163, 184, 0.1);
+  }
+
+  .portal-checkbox {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.9rem;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .portal-note {
+    max-width: 36rem;
+    text-align: center;
+    font-size: 0.875rem;
+    color: rgb(100, 116, 139);
+    line-height: 1.5;
+  }
+</style>
+
+<script>
+  // Portal arrival driver.
+  //
+  // States: closed → opening → open → closing → closed.
+  // The "open" state is the hand-off window — when wired up, the avatar's
+  // step-out / pose animation plays during this hold, then close() fires.
+
+  const portal = document.getElementById('portal') as HTMLElement | null;
+  const stage = portal?.parentElement as HTMLElement | null;
+  const btn = document.getElementById('portal-toggle') as HTMLButtonElement | null;
+  const loop = document.getElementById('portal-loop') as HTMLInputElement | null;
+
+  const OPEN_MS = 460;
+  const CLOSE_MS = 360;
+  const HOLD_MS = 1500;
+  const LOOP_GAP_MS = 900;
+
+  type State = 'closed' | 'opening' | 'open' | 'closing';
+  let state: State = 'closed';
+  let timer: number | null = null;
+
+  function clearTimer() {
+    if (timer !== null) {
+      window.clearTimeout(timer);
+      timer = null;
+    }
+  }
+
+  function open() {
+    if (!portal || !stage) return;
+    clearTimer();
+    state = 'opening';
+    portal.classList.remove('is-closing', 'is-open');
+    portal.classList.add('is-opening');
+    spawnGlitchBurst(stage, 16, 'out');
+    if (btn) btn.textContent = 'Close portal';
+
+    timer = window.setTimeout(() => {
+      portal.classList.remove('is-opening');
+      portal.classList.add('is-open');
+      state = 'open';
+      if (loop?.checked) {
+        timer = window.setTimeout(close, HOLD_MS);
+      }
+    }, OPEN_MS);
+  }
+
+  function close() {
+    if (!portal || !stage) return;
+    clearTimer();
+    state = 'closing';
+    portal.classList.remove('is-open', 'is-opening');
+    portal.classList.add('is-closing');
+    spawnGlitchBurst(stage, 12, 'in');
+    if (btn) btn.textContent = 'Open portal';
+
+    timer = window.setTimeout(() => {
+      portal.classList.remove('is-closing');
+      state = 'closed';
+      if (loop?.checked) {
+        timer = window.setTimeout(open, LOOP_GAP_MS);
+      }
+    }, CLOSE_MS);
+  }
+
+  function spawnGlitchBurst(host: HTMLElement, count: number, dir: 'out' | 'in') {
+    const rect = host.getBoundingClientRect();
+    const cx = rect.width / 2;
+    const cy = rect.height / 2;
+    const radius = Math.min(rect.width, rect.height) * 0.55;
+
+    for (let i = 0; i < count; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const distance = radius * (0.6 + Math.random() * 0.55);
+      const farX = cx + Math.cos(angle) * distance;
+      const farY = cy + Math.sin(angle) * distance;
+      const startX = dir === 'out' ? cx : farX;
+      const startY = dir === 'out' ? cy : farY;
+      const endX = dir === 'out' ? farX : cx;
+      const endY = dir === 'out' ? farY : cy;
+
+      const px = document.createElement('div');
+      px.className = 'portal-pixel';
+      const size = 2 + Math.floor(Math.random() * 3);
+      const color = Math.random() < 0.72 ? '#5ce8ff' : '#ff66dd';
+      const duration = 280 + Math.random() * 240;
+      px.style.setProperty('--px-size', `${size}px`);
+      px.style.setProperty('--px-color', color);
+      px.style.setProperty('--px-start-x', `${startX}px`);
+      px.style.setProperty('--px-start-y', `${startY}px`);
+      px.style.setProperty('--px-end-x', `${endX}px`);
+      px.style.setProperty('--px-end-y', `${endY}px`);
+      px.style.setProperty('--px-duration', `${duration}ms`);
+      host.appendChild(px);
+      window.setTimeout(() => px.remove(), duration + 80);
+    }
+  }
+
+  btn?.addEventListener('click', () => {
+    if (state === 'closed' || state === 'closing') open();
+    else close();
+  });
+
+  loop?.addEventListener('change', () => {
+    if (loop.checked && state === 'closed') open();
+  });
+</script>

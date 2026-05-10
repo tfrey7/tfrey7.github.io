@@ -60,7 +60,19 @@ import { contact, skills, experience, education } from '../data/profile';
               </h3>
             </div>
             <div class="flex flex-wrap items-baseline justify-between gap-x-3">
-              <p class="resume-role-title">{role.title}</p>
+              <p class="resume-role-title">
+                {role.company === 'Otti, Inc.' ? (
+                  <span class="role-cycle">
+                    Founding{' '}
+                    <span class="role-cycle-word">
+                      <span class="role-cycle-original">Engineer</span>
+                      <span class="role-cycle-overlay" aria-hidden="true" />
+                    </span>
+                  </span>
+                ) : (
+                  role.title
+                )}
+              </p>
               <p class="resume-meta">{role.start} – {role.end}</p>
             </div>
             {role.bullets.length > 0 && (
@@ -91,8 +103,11 @@ import { contact, skills, experience, education } from '../data/profile';
   const stage = document.querySelector<HTMLElement>('.skills-stage');
   const skillsAvatar = stage?.querySelector<HTMLElement>('.skills-avatar') ?? null;
   const SETTLE_MS = 1200;
-  const CURTAIN_CLOSE_MS = 420;
-  const CURTAIN_HOLD_MS = 800;
+  // Fractions of the core's duration when the hammer hits the ground. Tuned
+  // to the hammer-fix sheet: hammer descends to the floor around frame ~13
+  // (52%) and a follow-up beat around frame ~18 (72%). Tweak after watching
+  // the animation if the snap-back doesn't land on the visual impact.
+  const HAMMER_IMPACT_FRACTIONS = [0.52, 0.72] as const;
   let fixTimer: number | null = null;
   let cascading = false;
   const avatarTimers: number[] = [];
@@ -123,16 +138,16 @@ import { contact, skills, experience, education } from '../data/profile';
     { sprite: '/sprites/tim/exits/beam-up.png', durationMs: 1100 },
   ];
 
-  const CORE_PEACE_SIGN: AvatarAnim = {
-    sprite: '/sprites/tim/cores/peace-sign.png',
-    durationMs: 1300,
+  const CORE_HAMMER_FIX: AvatarAnim = {
+    sprite: '/sprites/tim/cores/hammer-fix.png',
+    durationMs: 1500,
   };
 
-  // Beat after the arrival lands before the curtain begins closing — gives
+  // Beat after the arrival lands before the hammer-fix kicks off — gives
   // the audience a moment to register that he's arrived.
   const ARRIVAL_TO_REPAIR_MS = 200;
   // Pause between core's last frame and the exit kicking off — long enough
-  // for the held peace pose to register before he flips out.
+  // for the held standing pose to register before he leaves.
   const CORE_TO_EXIT_HOLD_MS = 320;
   // Final fade after the exit sprite finishes (covers any sprites that don't
   // fully fade themselves out of frame).
@@ -215,81 +230,58 @@ import { contact, skills, experience, education } from '../data/profile';
     }
   }
 
-  function playWrench(duration: number) {
+  function playThunk() {
     const ctx = getAudioCtx();
     if (!ctx) return;
     if (ctx.state === 'suspended') ctx.resume().catch(() => {});
     if (ctx.state !== 'running') return;
 
     const now = ctx.currentTime;
+    const totalDur = 0.16;
 
-    // Carrier — buzzy square wave, motor spool up at start, wind down at end.
-    const carrier = ctx.createOscillator();
-    carrier.type = 'square';
-    carrier.frequency.setValueAtTime(680, now);
-    carrier.frequency.linearRampToValueAtTime(880, now + Math.min(0.08, duration * 0.2));
-    carrier.frequency.setValueAtTime(880, now + Math.max(0, duration - 0.1));
-    carrier.frequency.linearRampToValueAtTime(520, now + duration);
+    // Triangle body with a fast pitch dip — gives the woody "thock" of a
+    // claw hammer striking a board.
+    const osc = ctx.createOscillator();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(280, now);
+    osc.frequency.exponentialRampToValueAtTime(120, now + 0.12);
 
-    const carrierFilter = ctx.createBiquadFilter();
-    carrierFilter.type = 'lowpass';
-    carrierFilter.frequency.value = 2200;
+    const oscFilter = ctx.createBiquadFilter();
+    oscFilter.type = 'lowpass';
+    oscFilter.frequency.value = 1200;
 
-    // White noise layer for mechanical chatter.
-    const noiseSamples = Math.floor(ctx.sampleRate * duration);
-    const noiseBuf = ctx.createBuffer(1, noiseSamples, ctx.sampleRate);
-    const noiseData = noiseBuf.getChannelData(0);
-    for (let i = 0; i < noiseSamples; i++) noiseData[i] = Math.random() * 2 - 1;
+    const oscGain = ctx.createGain();
+    oscGain.gain.setValueAtTime(0, now);
+    oscGain.gain.linearRampToValueAtTime(0.18, now + 0.005);
+    oscGain.gain.exponentialRampToValueAtTime(0.0001, now + totalDur);
+
+    osc.connect(oscFilter).connect(oscGain).connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + totalDur + 0.02);
+
+    // Sharp band-passed transient at the front — the "tk" of the strike that
+    // sells the impact.
+    const noiseDur = 0.04;
+    const buffer = ctx.createBuffer(1, Math.floor(ctx.sampleRate * noiseDur), ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < data.length; i++) {
+      data[i] = (Math.random() * 2 - 1) * (1 - i / data.length);
+    }
     const noise = ctx.createBufferSource();
-    noise.buffer = noiseBuf;
+    noise.buffer = buffer;
 
     const noiseFilter = ctx.createBiquadFilter();
     noiseFilter.type = 'bandpass';
-    noiseFilter.frequency.value = 1700;
-    noiseFilter.Q.value = 1.2;
+    noiseFilter.frequency.value = 1800;
+    noiseFilter.Q.value = 0.8;
 
-    const carrierGain = ctx.createGain();
-    carrierGain.gain.value = 0.7;
     const noiseGain = ctx.createGain();
-    noiseGain.gain.value = 0.35;
+    noiseGain.gain.setValueAtTime(0.12, now);
+    noiseGain.gain.exponentialRampToValueAtTime(0.0001, now + noiseDur);
 
-    // LFO at ~28Hz creates the rapid hammer-pulse "bzzzt" character.
-    // Sawtooth LFO range -1..1 → mapped to 0.05..1 via gain (0.475) + offset (0.525).
-    const lfo = ctx.createOscillator();
-    lfo.type = 'sawtooth';
-    lfo.frequency.value = 28;
-
-    const lfoScale = ctx.createGain();
-    lfoScale.gain.value = 0.475;
-
-    const offset = ctx.createConstantSource();
-    offset.offset.value = 0.525;
-
-    const pulseGain = ctx.createGain();
-    pulseGain.gain.value = 0;
-    lfo.connect(lfoScale).connect(pulseGain.gain);
-    offset.connect(pulseGain.gain);
-
-    // Master envelope.
-    const master = ctx.createGain();
-    master.gain.setValueAtTime(0, now);
-    master.gain.linearRampToValueAtTime(0.18, now + 0.025);
-    master.gain.setValueAtTime(0.18, now + Math.max(0.03, duration - 0.06));
-    master.gain.linearRampToValueAtTime(0, now + duration);
-
-    carrier.connect(carrierFilter).connect(carrierGain).connect(pulseGain);
-    noise.connect(noiseFilter).connect(noiseGain).connect(pulseGain);
-    pulseGain.connect(master).connect(ctx.destination);
-
-    const stop = now + duration + 0.05;
-    carrier.start(now);
+    noise.connect(noiseFilter).connect(noiseGain).connect(ctx.destination);
     noise.start(now);
-    lfo.start(now);
-    offset.start(now);
-    carrier.stop(stop);
-    noise.stop(stop);
-    lfo.stop(stop);
-    offset.stop(stop);
+    noise.stop(now + noiseDur);
   }
 
   function playAngelicChime() {
@@ -335,8 +327,7 @@ import { contact, skills, experience, education } from '../data/profile';
 
   function fall(el: HTMLElement, direction: Direction, delay: number, intensity: number) {
     // Roll a tip angle first; if it exceeds the tipping point, gravity wins and
-    // the item falls all the way off instead of hanging mid-rotation past the
-    // curtain's coverage.
+    // the item falls all the way off rather than hanging at a weird steep angle.
     const tipAngle = 22 + Math.random() * 78;
     const TIPPING_POINT = 62;
     const fallsOff = Math.random() < 0.22 || tipAngle > TIPPING_POINT;
@@ -516,24 +507,59 @@ import { contact, skills, experience, education } from '../data/profile';
     );
   }
 
-  // Plays the curtain → sparks/smoke → snap-back → curtain-open sequence.
-  // Scheduled to fire `startMs` after runFix kicks off so it can wait for the
-  // avatar to arrive first.
-  function scheduleRepair(startMs: number, fallen: NodeListOf<HTMLElement>) {
+  // Returns the viewport + stage-percent coordinates of the hammer's strike
+  // point: roughly in front of the avatar's right foot. Sampled at impact time
+  // (not pre-computed) so layout shifts between schedule and fire don't drift it.
+  function computeHammerImpactPoint() {
+    if (!stage || !skillsAvatar) return null;
+    const avatarRect = skillsAvatar.getBoundingClientRect();
+    const stageRect = stage.getBoundingClientRect();
+    const viewportX = avatarRect.left + avatarRect.width * 0.78;
+    const viewportY = avatarRect.bottom - 12;
+    return {
+      viewportX,
+      viewportY,
+      stagePctX: ((viewportX - stageRect.left) / stageRect.width) * 100,
+      stagePctY: ((viewportY - stageRect.top) / stageRect.height) * 100,
+    };
+  }
+
+  // Drives the visible repair: each hammer impact snaps back a portion of the
+  // pile, plays a thunk, and erupts sparks/puffs at the strike point. Fallen
+  // items are partitioned left-to-right so the hammer reads as working its way
+  // across the pile rather than fixing everything at once.
+  function scheduleRepair(
+    startMs: number,
+    fallen: NodeListOf<HTMLElement>,
+    coreDurationMs: number,
+  ) {
     if (!stage) return;
+
+    const sortedByX = Array.from(fallen)
+      .map((el) => ({ el, x: el.getBoundingClientRect().left }))
+      .sort((a, b) => a.x - b.x)
+      .map((p) => p.el);
+    const half = Math.ceil(sortedByX.length / HAMMER_IMPACT_FRACTIONS.length);
+    const waves: HTMLElement[][] = HAMMER_IMPACT_FRACTIONS.map((_, i) =>
+      sortedByX.slice(i * half, (i + 1) * half),
+    );
+
     window.setTimeout(() => {
       if (!stage) return;
       stage.classList.add('is-fixing');
+    }, startMs);
 
-      window.setTimeout(() => spawnSparks(stage, 28), CURTAIN_CLOSE_MS - 110);
-      window.setTimeout(() => spawnPuffs(stage, 22), CURTAIN_CLOSE_MS - 80);
-      // F1 pit-stop wheel-gun: two short bursts ("buzz... buzz") around the
-      // sparks/smoke moment.
-      window.setTimeout(() => playWrench(0.34), CURTAIN_CLOSE_MS - 130);
-      window.setTimeout(() => playWrench(0.32), CURTAIN_CLOSE_MS + 230);
-
+    HAMMER_IMPACT_FRACTIONS.forEach((frac, i) => {
+      const wave = waves[i] ?? [];
       window.setTimeout(() => {
-        fallen.forEach((el) => {
+        if (!stage) return;
+        const impact = computeHammerImpactPoint();
+        playThunk();
+        if (impact) {
+          spawnSparks(impact.viewportX, impact.viewportY, 14);
+          spawnPuffs(stage, impact.stagePctX, impact.stagePctY, 11);
+        }
+        wave.forEach((el) => {
           el.style.transition = 'none';
           el.classList.remove('is-fallen', 'is-falling-off');
           el.style.removeProperty('--fall-angle');
@@ -544,14 +570,14 @@ import { contact, skills, experience, education } from '../data/profile';
           void el.offsetHeight;
           el.style.transition = '';
         });
-      }, CURTAIN_CLOSE_MS + 80);
+      }, startMs + frac * coreDurationMs);
+    });
 
-      window.setTimeout(() => {
-        if (!stage) return;
-        stage.classList.remove('is-fixing');
-        cascading = false;
-      }, CURTAIN_CLOSE_MS + CURTAIN_HOLD_MS);
-    }, startMs);
+    window.setTimeout(() => {
+      if (!stage) return;
+      stage.classList.remove('is-fixing');
+      cascading = false;
+    }, startMs + coreDurationMs);
   }
 
   function runFix() {
@@ -567,21 +593,20 @@ import { contact, skills, experience, education } from '../data/profile';
 
     const arrival = pickRandom(ARRIVALS);
     const exit = pickRandom(EXITS);
-    const core = CORE_PEACE_SIGN;
+    const core = CORE_HAMMER_FIX;
 
-    // Serial timeline: arrival → repair → core (during curtain reveal) → exit.
-    // The repair waits for the avatar to land; the exit waits for the repair
-    // to finish (curtain fully open) and the core gesture to hold its pose.
-    const T_REPAIR_START = arrival.durationMs + ARRIVAL_TO_REPAIR_MS;
-    const T_CURTAIN_OPEN = T_REPAIR_START + CURTAIN_CLOSE_MS + CURTAIN_HOLD_MS;
-    const T_CORE_END = T_CURTAIN_OPEN + core.durationMs;
+    // Serial timeline: arrival → core (the visible fix) → exit. The hammer's
+    // impact frames inside the core duration drive the snap-back; see
+    // scheduleRepair.
+    const T_CORE_START = arrival.durationMs + ARRIVAL_TO_REPAIR_MS;
+    const T_CORE_END = T_CORE_START + core.durationMs;
     const T_EXIT_START = T_CORE_END + CORE_TO_EXIT_HOLD_MS;
 
     startAvatarArrival(arrival);
-    scheduleAvatarCore(core, T_CURTAIN_OPEN);
+    scheduleAvatarCore(core, T_CORE_START);
     scheduleAvatarExit(exit, T_EXIT_START);
 
-    scheduleRepair(T_REPAIR_START, fallen);
+    scheduleRepair(T_CORE_START, fallen, core.durationMs);
   }
 
   type Spark = {
@@ -598,20 +623,15 @@ import { contact, skills, experience, education } from '../data/profile';
   let physicsFrame: number | null = null;
   let physicsLastTime = 0;
 
-  function spawnSparks(stageEl: HTMLElement, count: number) {
-    // Spawn at the curtain seam in viewport coords; sparks live in document.body
-    // (position: fixed) so they can fly anywhere on screen and bounce off the
-    // viewport edges, settling along the bottom of the window.
-    const rect = stageEl.getBoundingClientRect();
-    const seamX = rect.left + rect.width * 0.5;
-    const seamY = rect.top + rect.height * 0.5;
-    const seamYJitter = rect.height * 0.35;
-
+  function spawnSparks(centerX: number, centerY: number, count: number) {
+    // Sparks live in document.body (position: fixed) so they can fly anywhere
+    // on screen and bounce off the viewport edges, settling along the bottom of
+    // the window. Caller supplies the impact point in viewport coords.
     for (let i = 0; i < count; i++) {
       window.setTimeout(() => {
         const side: -1 | 1 = Math.random() < 0.5 ? -1 : 1;
-        const x = seamX + side * Math.random() * 4;
-        const y = seamY + (Math.random() - 0.5) * seamYJitter;
+        const x = centerX + side * Math.random() * 4;
+        const y = centerY + (Math.random() - 0.5) * 6;
 
         // Bias velocity outward+up — at viewport scale they need horizontal
         // momentum to ricochet across the screen, not just shoot straight up.
@@ -700,8 +720,9 @@ import { contact, skills, experience, education } from '../data/profile';
     }
   }
 
-  function spawnPuffs(stageEl: HTMLElement, count: number) {
-    // Front-loaded eruption: most puffs in the first ~180ms, the rest trail off.
+  function spawnPuffs(stageEl: HTMLElement, leftPct: number, topPct: number, count: number) {
+    // Front-loaded eruption around the supplied stage-percent point: most puffs
+    // in the first ~180ms, the rest trail off.
     const burstCount = Math.ceil(count * 0.65);
     for (let i = 0; i < count; i++) {
       const inBurst = i < burstCount;
@@ -711,12 +732,12 @@ import { contact, skills, experience, education } from '../data/profile';
 
       window.setTimeout(() => {
         const isBack = i % 2 === 0;
-        // Bias position toward the seam center; back puffs spread a touch wider.
+        // Bias position around the impact; back puffs spread a touch wider.
         const sideRoll = Math.random();
         const side: -1 | 1 = sideRoll < 0.5 ? -1 : 1;
-        const horizontalSpread = isBack ? 10 : 7;
-        const left = 50 + side * (1 + Math.random() * horizontalSpread);
-        const top = 18 + Math.random() * 64;
+        const horizontalSpread = isBack ? 8 : 5;
+        const left = leftPct + side * (1 + Math.random() * horizontalSpread);
+        const top = topPct + (Math.random() - 0.5) * 14;
 
         const puff = document.createElement('div');
         puff.className = isBack ? 'skills-puff skills-puff--back' : 'skills-puff';
@@ -726,7 +747,7 @@ import { contact, skills, experience, education } from '../data/profile';
         const size = isBack
           ? 56 + Math.random() * 60
           : 30 + Math.random() * 40;
-        // Drift outward from seam (away from center) and upward.
+        // Drift outward from impact (away from center) and upward.
         const driftX = side * (20 + Math.random() * 70);
         const driftY = -(40 + Math.random() * 60);
         const rotate = side * (10 + Math.random() * 50);
@@ -774,4 +795,126 @@ import { contact, skills, experience, education } from '../data/profile';
       nameAvatarTimer = null;
     }, NAME_AVATAR_TOTAL_MS);
   });
+
+  // Founding-Engineer hat-cycle. The joke: founding engineers wear every hat.
+  // Click "Founding Engineer" on the Otti row, the second word slot-machines
+  // through alternate hats and snaps back to "Engineer".
+  const HATS = [
+    'Janitor',
+    'Salesperson',
+    'Recruiter',
+    'Designer',
+    'DevOps',
+    'Plumber',
+    'Mediator',
+    'Strategist',
+    'Receptionist',
+    'Office Manager',
+    'IT Support',
+    'Coffee Maker',
+    'Customer Support',
+  ];
+  const HAT_HOLD_MS = 150;
+  const HAT_FINAL_HOLD_MS = 240;
+  const HATS_PER_CYCLE = 6;
+
+  function pickHats(n: number): string[] {
+    const pool = HATS.slice();
+    const out: string[] = [];
+    for (let i = 0; i < n && pool.length > 0; i++) {
+      const idx = Math.floor(Math.random() * pool.length);
+      out.push(pool.splice(idx, 1)[0]);
+    }
+    return out;
+  }
+
+  function playRoleTick(pitch: number) {
+    const ctx = getAudioCtx();
+    if (!ctx) return;
+    if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+    if (ctx.state !== 'running') return;
+
+    const now = ctx.currentTime;
+    // Square-wave clack with a fast pitch dip — like a typewriter strike or
+    // an old split-flap display flipping.
+    const osc = ctx.createOscillator();
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(pitch * 1.6, now);
+    osc.frequency.exponentialRampToValueAtTime(pitch, now + 0.006);
+    osc.frequency.exponentialRampToValueAtTime(pitch * 0.7, now + 0.05);
+
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.value = 2400;
+
+    const env = ctx.createGain();
+    env.gain.setValueAtTime(0, now);
+    env.gain.linearRampToValueAtTime(0.022, now + 0.003);
+    env.gain.exponentialRampToValueAtTime(0.0001, now + 0.05);
+
+    osc.connect(filter).connect(env).connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.06);
+  }
+
+  const roleCycle = document.querySelector<HTMLElement>('.role-cycle');
+  const roleCycleOverlay = roleCycle?.querySelector<HTMLElement>('.role-cycle-overlay') ?? null;
+  const roleCycleTimers: number[] = [];
+
+  function clearRoleCycleTimers() {
+    roleCycleTimers.forEach((t) => window.clearTimeout(t));
+    roleCycleTimers.length = 0;
+  }
+
+  function showHat(text: string, pitch: number) {
+    if (!roleCycleOverlay) return;
+    roleCycleOverlay.textContent = text;
+    roleCycleOverlay.classList.remove('is-flicker');
+    // Force reflow so re-adding the class restarts the flicker animation.
+    void roleCycleOverlay.offsetHeight;
+    roleCycleOverlay.classList.add('is-flicker');
+    playRoleTick(pitch);
+  }
+
+  function startRoleCycle() {
+    if (!roleCycle || !roleCycleOverlay) return;
+    clearRoleCycleTimers();
+
+    const sequence = pickHats(HATS_PER_CYCLE);
+    if (sequence.length === 0) return;
+
+    // Show the first hat synchronously so adding `is-cycling` doesn't briefly
+    // reveal an empty overlay (the original "Engineer" goes invisible the moment
+    // the class is set).
+    const firstPitch = 320 + Math.random() * 220;
+    roleCycleOverlay.textContent = sequence[0];
+    roleCycleOverlay.classList.remove('is-flicker');
+    void roleCycleOverlay.offsetHeight;
+    roleCycleOverlay.classList.add('is-flicker');
+    roleCycle.classList.add('is-cycling');
+    playRoleTick(firstPitch);
+
+    let t = HAT_HOLD_MS;
+    for (let i = 1; i < sequence.length; i++) {
+      const hat = sequence[i];
+      const pitch = 320 + Math.random() * 220;
+      roleCycleTimers.push(window.setTimeout(() => showHat(hat, pitch), t));
+      t += HAT_HOLD_MS;
+    }
+
+    // Snap back to Engineer with a slightly higher "settled" pitch.
+    roleCycleTimers.push(window.setTimeout(() => showHat('Engineer', 720), t));
+    t += HAT_FINAL_HOLD_MS;
+
+    // Drop the cycling class — overlay fades out, original "Engineer" reappears
+    // in the same position, so the swap is invisible.
+    roleCycleTimers.push(
+      window.setTimeout(() => {
+        roleCycle.classList.remove('is-cycling');
+        roleCycleOverlay.classList.remove('is-flicker');
+      }, t)
+    );
+  }
+
+  roleCycle?.addEventListener('click', startRoleCycle);
 </script>

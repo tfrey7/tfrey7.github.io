@@ -51,10 +51,28 @@
       "columns": 5,
       "firstFramePoseId": "cmoyxwhrb003mpweo0lws0877",
       "lastFramePoseId": "cmoyxwhrb003mpweo0lws0877",
-      "note": "Stand → raise right arm → hold peace sign → lower arm → stand. Both seams hit Original; chainable into any arrival/departure. Replaces the earlier first-frame-only version.",
+      "note": "Stand → raise right arm → hold peace sign → lower arm → stand. Both seams hit Original; chainable into any arrival/departure. Replaces the earlier first-frame-only version. Used by the name-click reveal.",
       "files": {
         "sheet": "peace-sign-core.png",
         "atlas": "peace-sign-core.atlas.json"
+      }
+    },
+    "hammer-fix": {
+      "spritesheetId": "cmoz22ma300qkccemulnrqcvo",
+      "slot": "core",
+      "kind": "custom",
+      "direction": "right",
+      "quality": "legendary",
+      "frameWidth": 256,
+      "frameHeight": 256,
+      "frameCount": 25,
+      "columns": 5,
+      "firstFramePoseId": "cmoyxwhrb003mpweo0lws0877",
+      "lastFramePoseId": "cmoyxwhrb003mpweo0lws0877",
+      "note": "Stand → pull claw hammer from behind back → raise overhead → swing down to floor (impact ~frame 13) → recoil + second swing (impact ~frame 18) → stow hammer → return to standing. Both seams hit Original; chainable into any arrival/departure. Drives the visible Skills repair — index.astro reads HAMMER_IMPACT_FRACTIONS to time snap-back + thunk SFX to the impact frames.",
+      "files": {
+        "sheet": "hammer-fix.png",
+        "atlas": "hammer-fix.atlas.json"
       }
     },
     "pipe-drop-arrival": {
