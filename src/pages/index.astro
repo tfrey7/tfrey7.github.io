@@ -43,10 +43,7 @@ import { contact, skills, experience, education } from '../data/profile';
         }
       </ul>
 
-      <div class="skills-curtain-mask" aria-hidden="true">
-        <div class="skills-curtain skills-curtain-left"></div>
-        <div class="skills-curtain skills-curtain-right"></div>
-      </div>
+      <div class="skills-avatar" aria-hidden="true"></div>
     </section>
 
     <!-- Experience -->
@@ -92,11 +89,54 @@ import { contact, skills, experience, education } from '../data/profile';
   type Direction = 'left' | 'right';
 
   const stage = document.querySelector<HTMLElement>('.skills-stage');
+  const skillsAvatar = stage?.querySelector<HTMLElement>('.skills-avatar') ?? null;
   const SETTLE_MS = 1200;
   const CURTAIN_CLOSE_MS = 420;
   const CURTAIN_HOLD_MS = 800;
   let fixTimer: number | null = null;
   let cascading = false;
+  const avatarTimers: number[] = [];
+
+  // === Avatar animation library =========================================
+  // Three slots wrap each avatar appearance: arrival → core → exit.
+  //   - arrival/exit are randomized from their pools (chainable, both seams
+  //     hit the Original pose so they swap into the core invisibly).
+  //   - core is the deliberate gesture for the interaction.
+  // All sprites are 5x5 grids of 256px frames — JS just sets the URL and
+  // duration, the CSS phase classes handle the rest.
+  type AvatarAnim = { sprite: string; durationMs: number };
+
+  const ARRIVALS: AvatarAnim[] = [
+    { sprite: '/sprites/tim/arrivals/somersault.png', durationMs: 1100 },
+    { sprite: '/sprites/tim/arrivals/portal.png', durationMs: 1100 },
+    { sprite: '/sprites/tim/arrivals/terminal-boot.png', durationMs: 1100 },
+    { sprite: '/sprites/tim/arrivals/skydive-chute.png', durationMs: 1100 },
+    { sprite: '/sprites/tim/arrivals/spawn-in.png', durationMs: 1100 },
+    { sprite: '/sprites/tim/arrivals/pipe-drop.png', durationMs: 1100 },
+  ];
+
+  const EXITS: AvatarAnim[] = [
+    { sprite: '/sprites/tim/exits/backflip.png', durationMs: 1100 },
+    { sprite: '/sprites/tim/exits/curtain-drop.png', durationMs: 1100 },
+    { sprite: '/sprites/tim/exits/walk-off-shrug.png', durationMs: 1100 },
+    { sprite: '/sprites/tim/exits/save-and-quit.png', durationMs: 1100 },
+    { sprite: '/sprites/tim/exits/beam-up.png', durationMs: 1100 },
+  ];
+
+  const CORE_PEACE_SIGN: AvatarAnim = {
+    sprite: '/sprites/tim/cores/peace-sign.png',
+    durationMs: 1300,
+  };
+
+  // Beat after the arrival lands before the curtain begins closing — gives
+  // the audience a moment to register that he's arrived.
+  const ARRIVAL_TO_REPAIR_MS = 200;
+  // Pause between core's last frame and the exit kicking off — long enough
+  // for the held peace pose to register before he flips out.
+  const CORE_TO_EXIT_HOLD_MS = 320;
+  // Final fade after the exit sprite finishes (covers any sprites that don't
+  // fully fade themselves out of frame).
+  const AVATAR_FADE_MS = 280;
 
   // Lazy AudioContext — browsers require a user gesture before it can produce
   // sound, so the first-hover cascade silently no-ops here (per CLAUDE.md's
@@ -340,6 +380,7 @@ import { contact, skills, experience, education } from '../data/profile';
   function startCascade(clickX: number, clickY: number) {
     if (!stage || cascading || stage.classList.contains('is-fixing')) return;
     cascading = true;
+    resetAvatar();
 
     const items = Array.from(stage.querySelectorAll<HTMLElement>('.skill-item'));
 
@@ -392,6 +433,127 @@ import { contact, skills, experience, education } from '../data/profile';
     fixTimer = window.setTimeout(runFix, SETTLE_MS);
   }
 
+  const AVATAR_PHASE_CLASSES = [
+    'is-arriving',
+    'is-arrival-held',
+    'is-coring',
+    'is-core-held',
+    'is-exiting',
+    'is-fading',
+  ];
+
+  function clearAvatarTimers() {
+    avatarTimers.forEach((t) => window.clearTimeout(t));
+    avatarTimers.length = 0;
+  }
+
+  function resetAvatar() {
+    clearAvatarTimers();
+    if (!skillsAvatar) return;
+    skillsAvatar.classList.remove(...AVATAR_PHASE_CLASSES);
+    skillsAvatar.style.removeProperty('--sprite-url');
+    skillsAvatar.style.removeProperty('--anim-duration');
+    skillsAvatar.style.removeProperty('--anim-row-duration');
+  }
+
+  function setAvatarPhase(phaseClass: string) {
+    if (!skillsAvatar) return;
+    // Remove + add in the same task so the browser never paints an in-between
+    // state with no class (which would briefly drop opacity to 0).
+    skillsAvatar.classList.remove(...AVATAR_PHASE_CLASSES);
+    skillsAvatar.classList.add(phaseClass);
+  }
+
+  function loadAvatarAnim(anim: AvatarAnim) {
+    if (!skillsAvatar) return;
+    skillsAvatar.style.setProperty('--sprite-url', `url('${anim.sprite}')`);
+    skillsAvatar.style.setProperty('--anim-duration', `${anim.durationMs}ms`);
+    skillsAvatar.style.setProperty('--anim-row-duration', `${anim.durationMs / 5}ms`);
+  }
+
+  function pickRandom<T>(pool: T[]): T {
+    return pool[Math.floor(Math.random() * pool.length)];
+  }
+
+  // Per-phase schedulers — each one drives the avatar through one slot of the
+  // arrival → core → exit timeline. The caller composes them by passing the
+  // millisecond offset (relative to runFix start) when each phase should fire.
+  function startAvatarArrival(arrival: AvatarAnim) {
+    loadAvatarAnim(arrival);
+    setAvatarPhase('is-arriving');
+    avatarTimers.push(
+      window.setTimeout(() => setAvatarPhase('is-arrival-held'), arrival.durationMs)
+    );
+  }
+
+  function scheduleAvatarCore(core: AvatarAnim, startMs: number) {
+    avatarTimers.push(
+      window.setTimeout(() => {
+        loadAvatarAnim(core);
+        setAvatarPhase('is-coring');
+      }, startMs)
+    );
+    avatarTimers.push(
+      window.setTimeout(() => setAvatarPhase('is-core-held'), startMs + core.durationMs)
+    );
+  }
+
+  function scheduleAvatarExit(exit: AvatarAnim, startMs: number) {
+    avatarTimers.push(
+      window.setTimeout(() => {
+        loadAvatarAnim(exit);
+        setAvatarPhase('is-exiting');
+      }, startMs)
+    );
+    avatarTimers.push(
+      window.setTimeout(() => {
+        if (!skillsAvatar) return;
+        skillsAvatar.classList.add('is-fading');
+      }, startMs + exit.durationMs)
+    );
+    avatarTimers.push(
+      window.setTimeout(resetAvatar, startMs + exit.durationMs + AVATAR_FADE_MS)
+    );
+  }
+
+  // Plays the curtain → sparks/smoke → snap-back → curtain-open sequence.
+  // Scheduled to fire `startMs` after runFix kicks off so it can wait for the
+  // avatar to arrive first.
+  function scheduleRepair(startMs: number, fallen: NodeListOf<HTMLElement>) {
+    if (!stage) return;
+    window.setTimeout(() => {
+      if (!stage) return;
+      stage.classList.add('is-fixing');
+
+      window.setTimeout(() => spawnSparks(stage, 28), CURTAIN_CLOSE_MS - 110);
+      window.setTimeout(() => spawnPuffs(stage, 22), CURTAIN_CLOSE_MS - 80);
+      // F1 pit-stop wheel-gun: two short bursts ("buzz... buzz") around the
+      // sparks/smoke moment.
+      window.setTimeout(() => playWrench(0.34), CURTAIN_CLOSE_MS - 130);
+      window.setTimeout(() => playWrench(0.32), CURTAIN_CLOSE_MS + 230);
+
+      window.setTimeout(() => {
+        fallen.forEach((el) => {
+          el.style.transition = 'none';
+          el.classList.remove('is-fallen', 'is-falling-off');
+          el.style.removeProperty('--fall-angle');
+          el.style.removeProperty('--fall-origin');
+          el.style.removeProperty('--fall-x');
+          el.style.removeProperty('--fall-y');
+          el.style.removeProperty('--fall-duration');
+          void el.offsetHeight;
+          el.style.transition = '';
+        });
+      }, CURTAIN_CLOSE_MS + 80);
+
+      window.setTimeout(() => {
+        if (!stage) return;
+        stage.classList.remove('is-fixing');
+        cascading = false;
+      }, CURTAIN_CLOSE_MS + CURTAIN_HOLD_MS);
+    }, startMs);
+  }
+
   function runFix() {
     fixTimer = null;
     if (!stage) return;
@@ -401,33 +563,25 @@ import { contact, skills, experience, education } from '../data/profile';
       return;
     }
 
-    stage.classList.add('is-fixing');
+    resetAvatar();
 
-    window.setTimeout(() => spawnSparks(stage, 28), CURTAIN_CLOSE_MS - 110);
-    window.setTimeout(() => spawnPuffs(stage, 22), CURTAIN_CLOSE_MS - 80);
-    // F1 pit-stop wheel-gun: two short bursts ("buzz... buzz") around the
-    // sparks/smoke moment.
-    window.setTimeout(() => playWrench(0.34), CURTAIN_CLOSE_MS - 130);
-    window.setTimeout(() => playWrench(0.32), CURTAIN_CLOSE_MS + 230);
+    const arrival = pickRandom(ARRIVALS);
+    const exit = pickRandom(EXITS);
+    const core = CORE_PEACE_SIGN;
 
-    window.setTimeout(() => {
-      fallen.forEach((el) => {
-        el.style.transition = 'none';
-        el.classList.remove('is-fallen', 'is-falling-off');
-        el.style.removeProperty('--fall-angle');
-        el.style.removeProperty('--fall-origin');
-        el.style.removeProperty('--fall-x');
-        el.style.removeProperty('--fall-y');
-        el.style.removeProperty('--fall-duration');
-        void el.offsetHeight;
-        el.style.transition = '';
-      });
-    }, CURTAIN_CLOSE_MS + 80);
+    // Serial timeline: arrival → repair → core (during curtain reveal) → exit.
+    // The repair waits for the avatar to land; the exit waits for the repair
+    // to finish (curtain fully open) and the core gesture to hold its pose.
+    const T_REPAIR_START = arrival.durationMs + ARRIVAL_TO_REPAIR_MS;
+    const T_CURTAIN_OPEN = T_REPAIR_START + CURTAIN_CLOSE_MS + CURTAIN_HOLD_MS;
+    const T_CORE_END = T_CURTAIN_OPEN + core.durationMs;
+    const T_EXIT_START = T_CORE_END + CORE_TO_EXIT_HOLD_MS;
 
-    window.setTimeout(() => {
-      stage.classList.remove('is-fixing');
-      cascading = false;
-    }, CURTAIN_CLOSE_MS + CURTAIN_HOLD_MS);
+    startAvatarArrival(arrival);
+    scheduleAvatarCore(core, T_CURTAIN_OPEN);
+    scheduleAvatarExit(exit, T_EXIT_START);
+
+    scheduleRepair(T_REPAIR_START, fallen);
   }
 
   type Spark = {

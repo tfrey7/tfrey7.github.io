@@ -5,8 +5,27 @@
     "Original": "cmoyxwhrb003mpweo0lws0877"
   },
   "spritesheets": {
-    "peace-sign": {
-      "spritesheetId": "cmoyz85ws003lccemwntf7ui5",
+    "somersault-arrival": {
+      "spritesheetId": "cmoz06u4a00g3t902qba8o585",
+      "slot": "arrival",
+      "kind": "custom",
+      "direction": "right",
+      "quality": "legendary",
+      "frameWidth": 256,
+      "frameHeight": 256,
+      "frameCount": 25,
+      "columns": 5,
+      "firstFramePoseId": "cmoyxwhrb003mpweo0lws0877",
+      "lastFramePoseId": "cmoyxwhrb003mpweo0lws0877",
+      "note": "Stands → run-up dive → head-over-heels front flip → lands on belly/roll → pushes up to standing. Both seams hit Original pose. Reads comedic-tumble more than gymnastic-stick.",
+      "files": {
+        "sheet": "somersault-arrival.png",
+        "atlas": "somersault-arrival.atlas.json"
+      }
+    },
+    "backflip-departure": {
+      "spritesheetId": "cmoz06v6p00g7t9029h6uvyy8",
+      "slot": "departure",
       "kind": "custom",
       "direction": "right",
       "frameWidth": 256,
@@ -14,6 +33,165 @@
       "frameCount": 25,
       "columns": 5,
       "firstFramePoseId": "cmoyxwhrb003mpweo0lws0877",
+      "note": "Stands → springs up and back → head-over-heels backflip in reverse → recedes/shrinks out of frame. First frame locked to Original. Exits more downward than the prompt described but reads as 'he leaves'.",
+      "files": {
+        "sheet": "backflip-departure.png",
+        "atlas": "backflip-departure.atlas.json"
+      }
+    },
+    "peace-sign": {
+      "spritesheetId": "cmoz0iktg000e11msxnmlk7yv",
+      "slot": "core",
+      "kind": "custom",
+      "direction": "right",
+      "quality": "legendary",
+      "frameWidth": 256,
+      "frameHeight": 256,
+      "frameCount": 25,
+      "columns": 5,
+      "firstFramePoseId": "cmoyxwhrb003mpweo0lws0877",
+      "lastFramePoseId": "cmoyxwhrb003mpweo0lws0877",
+      "note": "Stand → raise right arm → hold peace sign → lower arm → stand. Both seams hit Original; chainable into any arrival/departure. Replaces the earlier first-frame-only version.",
+      "files": {
+        "sheet": "peace-sign-core.png",
+        "atlas": "peace-sign-core.atlas.json"
+      }
+    },
+    "pipe-drop-arrival": {
+      "spritesheetId": "cmoz1408e009y56olekmeghny",
+      "slot": "arrival",
+      "kind": "custom",
+      "direction": "right",
+      "quality": "legendary",
+      "frameWidth": 256,
+      "frameHeight": 256,
+      "frameCount": 25,
+      "columns": 5,
+      "lastFramePoseId": "cmoyxwhrb003mpweo0lws0877",
+      "note": "Mario-style green warp pipe renders well, but Tim is already standing on top in frame 1 rather than emerging from inside — reads as 'hops down off a pipe' rather than 'warps out of a pipe'. Still works as an arrival; pipe gives it Mario-Paint flavor. Last frame matches Original.",
+      "files": {
+        "sheet": "pipe-drop-arrival.png",
+        "atlas": "pipe-drop-arrival.atlas.json"
+      }
+    },
+    "spawn-in-arrival": {
+      "spritesheetId": "cmoz13u82009h56olq0ecbbb8",
+      "slot": "arrival",
+      "kind": "custom",
+      "direction": "right",
+      "quality": "legendary",
+      "frameWidth": 256,
+      "frameHeight": 256,
+      "frameCount": 25,
+      "columns": 5,
+      "lastFramePoseId": "cmoyxwhrb003mpweo0lws0877",
+      "note": "Frame 1 dark silhouette with golden rim → progressively colors in over frames 2-5 → settles into Original. Pixel-dither aspect didn't render literally; reads as 'silhouette fades into character' but materialization is clear. Clean and chainable.",
+      "files": {
+        "sheet": "spawn-in-arrival.png",
+        "atlas": "spawn-in-arrival.atlas.json"
+      }
+    },
+    "skydive-chute-arrival": {
+      "spritesheetId": "cmoz13vzv009p56olydpjl3jl",
+      "slot": "arrival",
+      "kind": "custom",
+      "direction": "right",
+      "quality": "legendary",
+      "frameWidth": 256,
+      "frameHeight": 256,
+      "frameCount": 25,
+      "columns": 5,
+      "lastFramePoseId": "cmoyxwhrb003mpweo0lws0877",
+      "note": "Strong execution. Red+white parachute clearly visible above Tim with arms wide for most descent frames; chute deflates beside him as he lands; final frames he stands in Original pose. Clear 'skydive landing' read.",
+      "files": {
+        "sheet": "skydive-chute-arrival.png",
+        "atlas": "skydive-chute-arrival.atlas.json"
+      }
+    },
+    "terminal-boot-arrival": {
+      "spritesheetId": "cmoz13uv00001kph10w7p89xj",
+      "slot": "arrival",
+      "kind": "custom",
+      "direction": "right",
+      "quality": "legendary",
+      "frameWidth": 256,
+      "frameHeight": 256,
+      "frameCount": 25,
+      "columns": 5,
+      "lastFramePoseId": "cmoyxwhrb003mpweo0lws0877",
+      "note": "Excellent. Glowing green CRT terminal renders, Tim's silhouette materializes inside it, then he steps out and the terminal fades. Clear 'tim --online' boot sequence read. Very on-brand for a programmer site.",
+      "files": {
+        "sheet": "terminal-boot-arrival.png",
+        "atlas": "terminal-boot-arrival.atlas.json"
+      }
+    },
+    "save-and-quit-departure": {
+      "spritesheetId": "cmoz13nyd004q11msezitu0np",
+      "slot": "departure",
+      "kind": "custom",
+      "direction": "right",
+      "frameWidth": 256,
+      "frameHeight": 256,
+      "frameCount": 25,
+      "columns": 5,
+      "firstFramePoseId": "cmoyxwhrb003mpweo0lws0877",
+      "note": "Works. Tim raises a hand, a small icon appears overhead, then he progressively dissolves into pixel debris in the bottom rows; final frame empty. Save-icon shape is small/abstract rather than clearly a floppy, but the dissolve gag is strong.",
+      "files": {
+        "sheet": "save-and-quit-departure.png",
+        "atlas": "save-and-quit-departure.atlas.json"
+      }
+    },
+    "beam-up-departure": {
+      "spritesheetId": "cmoz13p7t004u11msl0gdvuh1",
+      "slot": "departure",
+      "kind": "custom",
+      "direction": "right",
+      "frameWidth": 256,
+      "frameHeight": 256,
+      "frameCount": 25,
+      "columns": 5,
+      "firstFramePoseId": "cmoyxwhrb003mpweo0lws0877",
+      "note": "Strong execution. Cyan translucent column wraps Tim, body becomes increasingly translucent within it, then column dissipates. Classic Star Trek transporter feel. Note: a couple of late frames show him re-solidifying briefly before disappearing — slightly weakens the dematerialization curve but still reads.",
+      "files": {
+        "sheet": "beam-up-departure.png",
+        "atlas": "beam-up-departure.atlas.json"
+      }
+    },
+    "walk-off-shrug-departure": {
+      "spritesheetId": "cmoz13nwr00hhccemq8jirlq3",
+      "slot": "departure",
+      "kind": "custom",
+      "direction": "right",
+      "frameWidth": 256,
+      "frameHeight": 256,
+      "frameCount": 25,
+      "columns": 5,
+      "firstFramePoseId": "cmoyxwhrb003mpweo0lws0877",
+      "note": "Clean low-key exit. Initial shrug is subtle, then Tim walks toward screen-right and shrinks toward the horizon; last frames show him near/off the right edge. Good casual counterpart to the dramatic backflip-departure.",
+      "files": {
+        "sheet": "walk-off-shrug-departure.png",
+        "atlas": "walk-off-shrug-departure.atlas.json"
+      }
+    },
+    "curtain-drop-departure": {
+      "spritesheetId": "cmoz13v3p009l56olbrjsc0c0",
+      "slot": "departure",
+      "kind": "custom",
+      "direction": "right",
+      "frameWidth": 256,
+      "frameHeight": 256,
+      "frameCount": 25,
+      "columns": 5,
+      "firstFramePoseId": "cmoyxwhrb003mpweo0lws0877",
+      "note": "Excellent. Red curtain rod descends from top, gold-trimmed velvet curtain unfurls covering Tim, final frames show only the curtain. Very theatrical, very clear. One of the strongest of the batch.",
+      "files": {
+        "sheet": "curtain-drop-departure.png",
+        "atlas": "curtain-drop-departure.atlas.json"
+      }
+    },
+    "peace-sign-v2-no-trailing-seam": {
+      "spritesheetId": "cmoyz85ws003lccemwntf7ui5",
+      "note": "Superseded — first-frame-locked only, last frame not Original, so couldn't chain into a departure cleanly. Replaced by the seam-contract version with both frames locked.",
       "files": {
         "sheet": "peace-sign.png",
         "atlas": "peace-sign.atlas.json"
@@ -21,7 +199,7 @@
     },
     "peace-sign-v1": {
       "spritesheetId": "cmoyz1izo001mccem99hjdmdn",
-      "note": "Initial attempt — first 2 frames jumped to peace-sign before natural raise. Replaced by v2 (firstFramePoseId locked).",
+      "note": "Misfire — first 2 frames jumped to peace-sign before natural raise. Replaced by v2 (firstFramePoseId locked); v2 itself later superseded by seam-contract version.",
       "files": {
         "sheet": "peace-sign-v1.png",
         "atlas": "peace-sign-v1.atlas.json"
@@ -36,7 +214,7 @@
       "frameCount": 25,
       "columns": 5,
       "firstFramePoseId": "cmoyxwhrb003mpweo0lws0877",
-      "note": "Forward flip → kneeling landing. v2 fixed the rotation axis (head-over-heels, not vertical pirouette). Landing holds in a head-bowed kneel rather than a textbook fist-on-ground Marvel pose — close enough for queued use; lock a last_frame_pose_id if a sharper hero-pose end is needed.",
+      "note": "Standalone forward-flip → kneeling-hero landing. Doesn't fit the seam contract (ends in a kneel, not Original). Kept as a one-shot 'big entrance' option rather than a chainable arrival; superseded for the arrival slot by somersault-arrival.",
       "files": {
         "sheet": "somersault-hero-landing-v2.png",
         "atlas": "somersault-hero-landing-v2.atlas.json"

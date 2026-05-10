@@ -28,3 +28,22 @@ For now, fixes happen automatically (the page appears to repair itself). Once th
 
 - **Sound** only on user gesture (hover, click, etc.) — never on page load, never long enough to overlap the next gesture. Keep clips short and quiet so a recruiter clicking once isn't startled.
 - **No layout shifts** that affect surrounding content. Animations stay within the element's bounding box.
+
+## Avatar animations
+
+Every avatar animation slots into one of three parts:
+
+1. **Arrival** — how Tim gets on screen (jetpack, portal, slide-in, drop-in, somersault, etc.).
+2. **Core** — what he actually does once he's there (hammer-fix, wave, peek, peace-sign, etc.). This is the gag the interaction is built around.
+3. **Departure** — how he leaves. Optional; many interactions won't need a bespoke one.
+
+Arrivals and departures are **shared, randomized libraries** — at runtime, pick a random arrival when Tim appears and (optionally) a random departure when he leaves. Cores are interaction-specific and named after the gag.
+
+**Seam contract.** Every segment hits the Original standing pose at the seams so any arrival can chain into any core into any departure without a visible pop:
+- Arrivals: any first frame, **last frame locked to Original**.
+- Cores: **first frame locked to Original**, **last frame locked to Original**.
+- Departures: **first frame locked to Original**, any last frame.
+
+**Cost note.** Locking the last frame forces AutoSprite to legendary quality (slower, more credits than standard). Keep each library small (2–3 arrivals, 2–3 departures) — past that they blur together and the cost stops paying off.
+
+**When asked to add a new avatar animation, clarify which slot it fills (arrival / main / departure) before queueing.**
