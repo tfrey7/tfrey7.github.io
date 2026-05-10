@@ -26,5 +26,5 @@ For now, fixes happen automatically (the page appears to repair itself). Once th
 
 ## Reserved / off-limits
 
-- **Sound** off by default. If added later, it's opt-in or only triggered on direct click — never autoplay.
+- **Sound** only on user gesture (hover, click, etc.) — never on page load, never long enough to overlap the next gesture. Keep clips short and quiet so a recruiter clicking once isn't startled.
 - **No layout shifts** that affect surrounding content. Animations stay within the element's bounding box.

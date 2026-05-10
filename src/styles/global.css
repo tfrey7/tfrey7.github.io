@@ -68,6 +68,33 @@
     pointer-events: none;
     opacity: 0;
     transform: translateY(-50%);
+    isolation: isolate;
+  }
+
+  /* God-ray cone descending onto the avatar. ::before sits behind the sprite
+     (z-index: -1 within the avatar's stacking context) so the sprite stays
+     crisp on top of the wash of light. */
+  .name-avatar::before {
+    content: '';
+    position: absolute;
+    left: -36px;
+    top: -130px;
+    width: 168px;
+    height: 230px;
+    background: linear-gradient(
+      to bottom,
+      rgba(255, 250, 215, 0) 0%,
+      rgba(255, 250, 215, 0.78) 22%,
+      rgba(255, 232, 165, 0.30) 75%,
+      rgba(255, 232, 165, 0) 100%
+    );
+    clip-path: polygon(40% 0%, 60% 0%, 100% 100%, 0% 100%);
+    filter: blur(2.5px);
+    pointer-events: none;
+    opacity: 0;
+    transform-origin: top center;
+    transform: scaleY(0.7);
+    z-index: -1;
   }
 
   .name-avatar.is-playing {
@@ -75,6 +102,10 @@
       name-avatar-x 0.4s steps(5, jump-none) 5 forwards,
       name-avatar-y 2s steps(5, jump-none) 1 forwards,
       name-avatar-fade 3s ease-out 1 forwards;
+  }
+
+  .name-avatar.is-playing::before {
+    animation: name-godray 3s ease-out 1 forwards;
   }
 
   @keyframes name-avatar-x {
@@ -94,11 +125,27 @@
     100% { opacity: 0; transform: translate(0, -50%) scale(1); }
   }
 
+  @keyframes name-godray {
+    0%   { opacity: 0; transform: scaleY(0.7); }
+    5%   { opacity: 1; transform: scaleY(1); }
+    75%  { opacity: 1; transform: scaleY(1); }
+    100% { opacity: 0; transform: scaleY(1); }
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .name-avatar.is-playing {
       background-position: -384px -384px;
       animation: name-avatar-fade 2.4s ease-out 1 forwards;
     }
+    .name-avatar.is-playing::before {
+      transform: scaleY(1);
+      animation: name-godray-static 2.4s ease-out 1 forwards;
+    }
+  }
+
+  @keyframes name-godray-static {
+    0%, 100% { opacity: 0; }
+    20%, 70% { opacity: 0.85; }
   }
 
   .resume-contact {

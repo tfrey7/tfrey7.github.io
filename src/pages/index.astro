@@ -252,6 +252,47 @@ import { contact, skills, experience, education } from '../data/profile';
     offset.stop(stop);
   }
 
+  function playAngelicChime() {
+    const ctx = getAudioCtx();
+    if (!ctx) return;
+    if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+    if (ctx.state !== 'running') return;
+
+    const now = ctx.currentTime;
+    // C major arpeggio in the upper octave for a bright, bell-like reveal.
+    const freqs = [523.25, 659.25, 783.99, 1046.50]; // C5, E5, G5, C6
+    const peakGain = 0.028;
+    const decay = 1.1;
+    const stagger = 0.045;
+
+    freqs.forEach((freq, i) => {
+      const start = now + i * stagger;
+      const stop = start + decay + 0.1;
+
+      // Pair of detuned sines per note for a soft chorus shimmer.
+      const oscA = ctx.createOscillator();
+      oscA.type = 'sine';
+      oscA.frequency.value = freq;
+      const oscB = ctx.createOscillator();
+      oscB.type = 'sine';
+      oscB.frequency.value = freq * 1.0035;
+
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(0, start);
+      gain.gain.linearRampToValueAtTime(peakGain, start + 0.015);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + decay);
+
+      oscA.connect(gain);
+      oscB.connect(gain);
+      gain.connect(ctx.destination);
+
+      oscA.start(start);
+      oscB.start(start);
+      oscA.stop(stop);
+      oscB.stop(stop);
+    });
+  }
+
   function fall(el: HTMLElement, direction: Direction, delay: number, intensity: number) {
     // Roll a tip angle first; if it exceeds the tipping point, gravity wins and
     // the item falls all the way off instead of hanging mid-rotation past the
@@ -564,6 +605,8 @@ import { contact, skills, experience, education } from '../data/profile';
 
   nameInner?.addEventListener('click', () => {
     if (!nameAvatar) return;
+    const ctx = getAudioCtx();
+    if (ctx?.state === 'suspended') ctx.resume().catch(() => {});
     if (nameAvatarTimer !== null) {
       window.clearTimeout(nameAvatarTimer);
       nameAvatar.classList.remove('is-playing');
@@ -571,6 +614,7 @@ import { contact, skills, experience, education } from '../data/profile';
       void nameAvatar.offsetHeight;
     }
     nameAvatar.classList.add('is-playing');
+    playAngelicChime();
     nameAvatarTimer = window.setTimeout(() => {
       nameAvatar.classList.remove('is-playing');
       nameAvatarTimer = null;
