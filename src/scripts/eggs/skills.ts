@@ -1,11 +1,15 @@
-import { playBoink, playThunk, resumeAudio } from './audio';
+import { playBoink, playThunk, resumeAudio } from '../lib/audio';
 import {
   ARRIVALS,
+  AVATAR_FADE_MS,
   EXITS,
   type AvatarAnim,
   createAvatarController,
   pickRandom,
-} from './avatar';
+} from '../lib/avatar';
+import { end, tryStart } from '../lib/interaction-lock';
+
+const LOCK_ID = 'skills-cascade';
 
 // How long after the last item launches before the avatar arrives. Tuned so
 // the avatar's arrival animation (~1.1s) overlaps the last items' bounce-and-
@@ -73,7 +77,7 @@ type Spark = {
   maxLife: number;
 };
 
-export function initSkillsCascade() {
+export function initSkills() {
   const stage = document.querySelector<HTMLElement>('.skills-stage');
   const skillsAvatar = stage?.querySelector<HTMLElement>('.skills-avatar') ?? null;
   if (!stage || !skillsAvatar) return;
@@ -93,6 +97,7 @@ export function initSkillsCascade() {
 
   function startCascade(clickX: number, clickY: number) {
     if (!stage || cascading || stage.classList.contains('is-fixing')) return;
+    if (!tryStart(LOCK_ID)) return;
     cascading = true;
     stage.classList.add('is-cascading');
     avatar.reset();
@@ -361,6 +366,7 @@ export function initSkillsCascade() {
     if (!stage) return;
     if (bodies.length === 0) {
       cascading = false;
+      end(LOCK_ID);
       return;
     }
 
@@ -373,12 +379,17 @@ export function initSkillsCascade() {
     const T_CORE_START = arrival.durationMs + ARRIVAL_TO_REPAIR_MS;
     const T_CORE_END = T_CORE_START + core.durationMs;
     const T_EXIT_START = T_CORE_END + CORE_TO_EXIT_HOLD_MS;
+    const T_DONE = T_EXIT_START + exit.durationMs + AVATAR_FADE_MS;
 
     avatar.startArrival(arrival);
     avatar.scheduleCore(core, T_CORE_START);
     avatar.scheduleExit(exit, T_EXIT_START);
 
     scheduleRepair(T_CORE_START, core.durationMs);
+
+    // Release the lock only after Tim has fully faded — otherwise a click
+    // mid-exit could spawn a second avatar overlapping his fadeout.
+    window.setTimeout(() => end(LOCK_ID), T_DONE);
   }
 
   // Each hammer impact frame: a wave of bodies fly home from wherever they

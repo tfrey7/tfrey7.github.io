@@ -94,7 +94,7 @@
       }
     },
     "broom-sweep": {
-      "spritesheetId": "cmp19xtys0016rwtx6dkiyilx",
+      "spritesheetId": "cmp1cjw4q002j10bbyv1bxmr0",
       "slot": "core",
       "kind": "custom",
       "direction": "right",
@@ -105,10 +105,10 @@
       "columns": 5,
       "firstFramePoseId": "cmoyxwhrb003mpweo0lws0877",
       "lastFramePoseId": "cmoyxwhrb003mpweo0lws0877",
-      "note": "Stand → pull wide wooden push-broom from behind back → grip with both hands and lower brush to floor in front → take rhythmic push-strides leaning into broom across frames 5-21 → straighten and stow → return to standing. Both seams hit Original. Used by the Greenhouse cascade: greenhouse-cascade.ts plays this while translating the avatar's `left` from off-screen-left to past-stage-right; landed papers within the broom hitbox (BROOM_HITBOX_LEFT/RIGHT_FRAC of the avatar box) get marked swept and ride the brush off-screen. Mid-cycle frames are slightly inconsistent (a couple look more like 'walking past a planted broom' than active pushing) but the overall walking-while-sweeping read holds.",
+      "note": "v2 regeneration with explicit framing constraints — broom stays inside the 256px frame across all sweep frames, fixing v1's bristles/handle clipping at frame edges. Trade-off: Tim is more crouched in mid-cycle frames and the push-stride reads less crisp than v1, but no edge clipping. Drives greenhouse-cascade.ts: plays this while translating the avatar's `left` from off-screen-left to past-stage-right; landed papers at or behind BROOM_FRONT_FRAC of the avatar box get marked swept and ride the brush off-screen. Played as a single cycle over the full sweep duration (no loop) since the first/last 5 frames are Original-pose seam locks — looping would visibly drop and re-pick-up the broom. v1 kept at broom-sweep-v1.png for reference (spritesheetId cmp19xtys0016rwtx6dkiyilx).",
       "files": {
-        "sheet": "broom-sweep.png",
-        "atlas": "broom-sweep.atlas.json"
+        "sheet": "broom-sweep-v2.png",
+        "atlas": "broom-sweep-v2.atlas.json"
       }
     },
     "laptop-hack": {

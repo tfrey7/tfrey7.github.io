@@ -1,11 +1,14 @@
-import { playPaperWhoosh, resumeAudio } from './audio';
+import { playPaperWhoosh, resumeAudio } from '../lib/audio';
 import {
   ARRIVALS,
-  EXITS,
   type AvatarAnim,
   createAvatarController,
+  getCoreDurationMs,
   pickRandom,
-} from './avatar';
+} from '../lib/avatar';
+import { end, tryStart } from '../lib/interaction-lock';
+
+const LOCK_ID = 'greenhouse-cascade';
 
 // Greenhouse Easter egg. Click "Greenhouse Software" → a burst of resume
 // papers erupts upward from the company name (Greenhouse is an ATS), then
@@ -30,16 +33,23 @@ const PAPER_SIZE_PX = 48;
 // Avatar render width (matches .greenhouse-avatar CSS).
 const AVATAR_W = 192;
 
-// Push-broom core: stationary walk-push cycle. durationMs is one full play
-// of the 25-frame sprite — kept short so each broom stroke reads as
-// urgent/fast. `cycles` is how many times the sprite loops during the
-// sweep; total core time = durationMs * cycles. The JS-driven translate
-// spans the same total time, so a higher `cycles` value lets Tim cross
-// the stage slowly while the brooming motion stays fast and frequent.
+// Push-broom core. Single play of the 25-frame v2 sprite — cycling >1
+// makes Tim visibly drop and re-pick-up the broom at every loop boundary
+// (the first/last 5 frames are Original-pose seam locks). Two more
+// workarounds for the v2 sprite specifically:
+//
+//   - skipFrames: 10 — v2's first 10 frames are Tim standing without a
+//     broom (slow pickup phase). Negative CSS animation-delay starts the
+//     visible sprite at frame 10, where the broom first appears.
+//   - durationMs: 3500 — sets per-frame timing (~140ms/frame). The
+//     effective on-screen core time is durationMs - skipMs (3500 - 1400 =
+//     2100ms), which is also the avatar's translate window — see
+//     getCoreDurationMs.
 const CORE_BROOM_SWEEP: AvatarAnim = {
   sprite: '/sprites/tim/cores/broom-sweep.png',
-  durationMs: 1500,
-  cycles: 3,
+  durationMs: 3500,
+  cycles: 1,
+  skipFrames: 10,
 };
 
 // Beat after the click before the sweep sequence kicks off. Tuned so all
@@ -47,8 +57,6 @@ const CORE_BROOM_SWEEP: AvatarAnim = {
 const SWEEP_DELAY_AFTER_CLICK_MS = 2200;
 // Beat after arrival lands before the sweep core starts.
 const ARRIVAL_TO_SWEEP_MS = 100;
-// Beat after sweep ends before exit kicks in.
-const SWEEP_TO_EXIT_HOLD_MS = 200;
 
 // Broom front edge, as a fraction of the avatar bounding box. Any landed
 // paper at or behind this x-position gets swept — there is no rear bound,
@@ -154,12 +162,42 @@ type Paper = {
   sweptOffsetY: number;
 };
 
-export function initGreenhouseCascade() {
+export function initGreenhouse() {
   const stage = document.querySelector<HTMLElement>('.greenhouse-stage');
   const trigger = stage?.querySelector<HTMLElement>('.greenhouse-trigger') ?? null;
   const avatarEl = stage?.querySelector<HTMLElement>('.greenhouse-avatar') ?? null;
   const screenEl = stage?.querySelector<HTMLElement>('.greenhouse-screen') ?? null;
+  const superEl =
+    stage?.querySelector<HTMLElement>('.greenhouse-supercomputer') ?? null;
   if (!stage || !trigger || !avatarEl) return;
+
+  // Right tower's left edge in stage-local coords. Measured from the
+  // supercomputer sprite: the painted top of the right-hand "RESUMES" tower
+  // starts at pixel x=277 within the 384px frame (everything left of that is
+  // the CRT + desk). Tim's sweep terminates with the brush front parked at
+  // this edge so the pile lands right in front of the receptacle slot, ready
+  // for the (future) pickup-and-insert animation. Works across viewports —
+  // getBoundingClientRect returns post-transform bounds, so the mobile
+  // scale(0.65) is honoured automatically.
+  const RIGHT_TOWER_LEFT_FRAC = 277 / 384;
+  function getReceptacleLeft(): number {
+    if (!stage || !superEl) return stage!.clientWidth;
+    const stageRect = stage.getBoundingClientRect();
+    const superRect = superEl.getBoundingClientRect();
+    const superLeft = superRect.left - stageRect.left;
+    return superLeft + RIGHT_TOWER_LEFT_FRAC * superRect.width;
+  }
+
+  // Right edge of the entire supercomputer element in stage-local coords.
+  // Used as a generous upper bound for the swept-paper cull so a stray
+  // particle past the chassis still gets cleaned up. Pile normally parks
+  // well to the left of this (at the receptacle); this is a safety net.
+  function getSuperRight(): number {
+    if (!stage || !superEl) return stage!.clientWidth;
+    const stageRect = stage.getBoundingClientRect();
+    const superRect = superEl.getBoundingClientRect();
+    return superRect.right - stageRect.left;
+  }
 
   const avatar = createAvatarController(avatarEl);
 
@@ -261,6 +299,7 @@ export function initGreenhouseCascade() {
         screenEl.classList.remove('is-flashing', 'is-landing');
         screenEl.innerHTML = '';
         screenEl.style.removeProperty('--gh-screen-glow');
+        end(LOCK_ID);
       }, t + COMPUTER_FADE_OUT_MS + 80),
     );
   }
@@ -334,6 +373,13 @@ export function initGreenhouseCascade() {
 
     const stageW = stage!.clientWidth;
     const stageH = stage!.clientHeight;
+    // Swept-pile cull threshold. On wide viewports the supercomputer sits
+    // OUTSIDE the article (extends to ~stageW + 408); we need the pile to
+    // clear that right edge before being deleted, not the stage's right
+    // edge. On narrow viewports the chassis is anchored right:0 so superRight
+    // === stageW and this collapses back to the original behaviour.
+    const superRight = getSuperRight();
+    const sweptCullX = Math.max(stageW, superRight) + 60;
     // Faster fall than the previous pass — still feathery, but you can
     // actually see them land in a reasonable beat.
     const GRAVITY = 460;
@@ -360,15 +406,19 @@ export function initGreenhouseCascade() {
     for (let i = activePapers.length - 1; i >= 0; i--) {
       const p = activePapers[i];
 
-      // Swept papers ride the brush in their assigned pile slot. Their
-      // x and y are recomputed each tick from the current brushFront +
-      // their fixed sweptOffsetX/Y, so the whole pile glides forward
-      // together at the brush's pace while keeping its shape.
+      // Swept papers ride the brush in their assigned pile slot while the
+      // sweep is active — their x/y are recomputed each tick from the
+      // current brushFront + their fixed sweptOffsetX/Y, so the whole pile
+      // glides forward together at the brush's pace. Once sweepActive flips
+      // off (Tim parked at the receptacle), we stop touching them — they
+      // stay rendered where the last sweep-active tick put them, parked
+      // right in front of the slot until clearAll runs.
       if (p.swept) {
+        if (!sweepActive) continue;
         const landY = stageH - GROUND_GAP_PX - (PAPER_SIZE_PX / 2) * p.scale;
         p.x = brushFront + p.sweptOffsetX;
         p.y = landY + p.sweptOffsetY;
-        if (p.x > stageW + 60) {
+        if (p.x > sweptCullX) {
           p.el.remove();
           activePapers.splice(i, 1);
           continue;
@@ -497,27 +547,27 @@ export function initGreenhouseCascade() {
     avatar.reset();
 
     const arrival = pickRandom(ARRIVALS);
-    const exit = pickRandom(EXITS);
     const core = CORE_BROOM_SWEEP;
 
-    const stageW = stage.clientWidth;
     // Start far enough left that the brush's front edge begins LEFT of
     // -120 (the leftmost a paper can land), so every paper is initially
     // ahead of the brush and gets caught smoothly as it passes — no
-    // instant-snap jumps. Off-screen on the right too so the exit plays
-    // without popping at the stage edge.
+    // instant-snap jumps.
     const fromX = -AVATAR_W * BROOM_FRONT_FRAC - SWEEP_START_LEFT_MARGIN;
-    const toX = stageW + AVATAR_W * 0.4;
+    // End with the brush front parked at the receptacle's left edge — the
+    // pile rides at brushFront + 4..29, so it lands compressed right in
+    // front of the RESUMES slot, ready for the (future) pickup-and-insert
+    // animation. No exit follows; Tim stays in the core-held standing pose
+    // at this position until a re-click clears him.
+    const toX = getReceptacleLeft() - AVATAR_W * BROOM_FRONT_FRAC;
     avatarEl.style.left = `${fromX}px`;
 
-    const totalCoreMs = core.durationMs * (core.cycles ?? 1);
+    const totalCoreMs = getCoreDurationMs(core);
     const T_CORE_START = arrival.durationMs + ARRIVAL_TO_SWEEP_MS;
     const T_CORE_END = T_CORE_START + totalCoreMs;
-    const T_EXIT_START = T_CORE_END + SWEEP_TO_EXIT_HOLD_MS;
 
     avatar.startArrival(arrival);
     avatar.scheduleCore(core, T_CORE_START);
-    avatar.scheduleExit(exit, T_EXIT_START);
 
     // Schedule the actual travel: starts when the core phase begins, ends
     // when the core finishes. The physics loop reads sweep state each tick
@@ -544,15 +594,21 @@ export function initGreenhouseCascade() {
         // Snap avatar to its end position so any rAF rounding doesn't leave
         // it mid-stride.
         avatarEl.style.left = `${toX}px`;
+        // Sweep done, Tim parked at the receptacle. Release the interaction
+        // lock so re-clicks can reset and other easter eggs can run while
+        // Tim holds in place. Previously the lock was released at the tail
+        // of runScorecardFlash, but that path is deferred until the (future)
+        // pickup-and-insert animation lands.
+        end(LOCK_ID);
       }, T_CORE_END),
     );
 
-    // TODO: once the pickup-pile + put-in-receptacle animations land, move
-    // this flash trigger to fire when Tim drops the last resume into the
-    // RESUMES slot. For now it fires shortly after the sweep ends so the
-    // screen sequence can be reviewed in context.
-    const T_FLASH_START = T_CORE_END + 600;
-    sweepTimers.push(window.setTimeout(runScorecardFlash, T_FLASH_START));
+    // Scorecard flash is the computer's reaction to receiving the resumes,
+    // so it should fire from the (future) pickup-and-insert animation — not
+    // here. For now we leave Tim parked in front of the slot with the pile
+    // ready; runScorecardFlash stays defined and will be wired up when the
+    // insert animation lands.
+    void runScorecardFlash;
   }
 
   function start(clickX: number, clickY: number) {
@@ -577,6 +633,7 @@ export function initGreenhouseCascade() {
 
   trigger.addEventListener('click', (e) => {
     e.stopPropagation();
+    if (!tryStart(LOCK_ID)) return;
     resumeAudio();
     start(e.clientX, e.clientY);
   });

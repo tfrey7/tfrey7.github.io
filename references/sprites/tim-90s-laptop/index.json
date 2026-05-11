@@ -1,13 +1,13 @@
 {
-  "characterId": "cmp1ar2gh0035doelku3kk18l",
-  "characterName": "tim-90s-laptop",
-  "note": "Tim-90s POSED holding an open laptop with bright green code on the inner screen and a matte-black lid back. Used ONLY as a base for the laptop-hack core animation. Original pose IS Tim-with-laptop (not standing) — the laptop-hack seam-locks both first and last frames to this pose so the animation loops cleanly back to the held pose. The arrival→core seam is intentionally violated: Tim 'suddenly' has a laptop when the core starts. Accepted as a known cost of using a pose-anchored variant rather than relying on pure prompt-painted clamshell rendering, which produced an unconvincing flat green rectangle in the first attempt.",
+  "characterId": "cmp1das5o000znlzkehi3a6gc",
+  "characterName": "tim-90s-laptop-v3",
+  "note": "90s Tim POSED holding an open clamshell laptop in both hands. Used ONLY as the base for the laptop-hack core animation. Original pose IS Tim-with-laptop. Costume is the 90s look the user picked: brown center-parted curtained hair, magenta short-sleeve t-shirt with a chunky yellow pixel smiley face on the chest, light blue jeans, cheerful closed-lip smile. The laptop's visible lid BACK faces the camera and is solid matte-charcoal with a single small colorful pixel-art star sticker centered on it (the screen face is hidden — only a soft green glow on Tim's chin implies it). This base was generated via gpt-image-1 image-to-image edit (see /references/tim-90s-laptop-base-v4.png + @source). v1 (cmp1ar2gh0035doelku3kk18l, flannel + green-code-on-back) and v2 (cmp1c7k1j000b11w6v7ts8qr0, smiley tee but still green-code-on-back) are both retired.",
   "poses": {
-    "Original": "cmp1ar2hb0037doelfr93i49p"
+    "Original": "cmp1das620011nlzk03jx4oag"
   },
   "spritesheets": {
     "laptop-hack": {
-      "spritesheetId": "cmp1at7j9004rdoelojrcnmfj",
+      "spritesheetId": "cmp1dhtwo006z10bbjv55ahok",
       "slot": "core",
       "kind": "custom",
       "direction": "right",
@@ -16,13 +16,23 @@
       "frameHeight": 256,
       "frameCount": 25,
       "columns": 5,
-      "firstFramePoseId": "cmp1ar2hb0037doelfr93i49p",
-      "lastFramePoseId": "cmp1ar2hb0037doelfr93i49p",
-      "note": "Tim holds open laptop throughout, types with subtle motion variations across frames. Laptop is a clear clamshell with green-glowing inner screen and matte-black lid back (this is the fix that made laptop-hack work — pose-anchored base instead of prompt-painted clamshell). Motion is more 'engaged typing hold' than a sharply-staged Enter-stab climax; if a punchier mid-animation moment is needed later, regenerate this sheet (5 credits).",
+      "firstFramePoseId": "cmp1das620011nlzk03jx4oag",
+      "lastFramePoseId": "cmp1das620011nlzk03jx4oag",
+      "note": "Cheerful 90s Tim holds the open laptop in both hands throughout; subtle two-hand typing motion, triumphant Enter-stab around frame 13, small approving nod toward the end. Both seams hit Original. Lid back stays solid matte-charcoal with the star sticker — no code visible on the back of the lid at any frame (the prior generations leaked the screen onto the wrong face). Soft green chin glow remains.",
       "files": {
-        "sheet": "../../public/sprites/tim-90s/cores/laptop-hack.png",
+        "sheet": "../../../public/sprites/tim-90s/cores/laptop-hack.png",
         "atlas": "laptop-hack.atlas.json"
       }
+    },
+    "laptop-hack-v1": {
+      "spritesheetId": "cmp1at7j9004rdoelojrcnmfj",
+      "note": "Retired. Generated from the flannel tim-90s-laptop character — read as sinister Hollywood-hacker because the green screen lit the face from below.",
+      "files": {}
+    },
+    "laptop-hack-v2": {
+      "spritesheetId": "cmp1c9qda0011qed2kp33ba38",
+      "note": "Retired. First pass with the cheerful smiley-tee costume, but gpt-image-1 painted the green code onto the BACK of the lid (geometrically wrong from this camera angle). Fixed in v3 by re-rendering the base with a solid matte-charcoal lid back + star sticker.",
+      "files": {}
     }
   }
 }

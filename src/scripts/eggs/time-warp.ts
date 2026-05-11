@@ -1,4 +1,4 @@
-import { playTimeWarp } from './audio';
+import { playTimeWarp } from '../lib/audio';
 import {
   ARRIVALS,
   AVATAR_FADE_MS,
@@ -6,7 +6,10 @@ import {
   EXITS,
   createAvatarController,
   pickRandom,
-} from './avatar';
+} from '../lib/avatar';
+import { end, tryStart } from '../lib/interaction-lock';
+
+const LOCK_ID = 'time-warp';
 
 // ---------------------------------------------------------------------------
 // Time-warp Easter egg. Click a `.resume-meta` to warp back in time. Each
@@ -82,8 +85,6 @@ const DINO_ERAS: readonly string[] = [
   'Early Jurassic',
   'Mid-Triassic',
 ];
-const REDACTED = '████';
-
 function shiftYears(text: string, delta: number): string {
   return text.replace(/(?:19|20)\d{2}/g, (m) => String(parseInt(m, 10) + delta));
 }
@@ -104,10 +105,6 @@ function phraseDates(text: string, presentLabel: string, pool: readonly string[]
   });
 }
 
-function redactDates(text: string): string {
-  return text.replace(/(?:19|20)\d{2}|Present/g, (m) => (m === 'Present' ? 'ACTIVE' : REDACTED));
-}
-
 // Roulette scrambles — what flashes through during the spin before the date
 // lands. Numeric eras spin random years; phrase eras spin random pool entries.
 function scrambleNumeric(text: string): string {
@@ -118,14 +115,10 @@ function scramblePhrase(text: string, presentLabel: string, pool: readonly strin
     m === 'Present' ? presentLabel : pool[Math.floor(Math.random() * pool.length)]
   );
 }
-function scrambleRedact(text: string): string {
-  return text.replace(/(?:19|20)\d{2}|Present/g, () => REDACTED);
-}
 
 interface EraConfig {
   bodyClass: string;
   marquee: string;
-  topBanner?: string;
   bottomBanner?: string;
   arrivals: AvatarAnim[];
   exits: AvatarAnim[];
@@ -146,9 +139,8 @@ const ERA_CONFIGS: Record<Era, EraConfig> = {
   },
   '80s': {
     bodyClass: 'era-80s',
-    marquee: '▼ Q3 SYNERGY ↑ 320% ▼ MAGNIFICENT GROWTH ▼ EXECUTIVE BONUS UNLOCKED ▼ PARADIGM SHIFT IN PROGRESS ▼',
-    topBanner: 'QUARTERLY EARNINGS REPORT — CONFIDENTIAL',
-    bottomBanner: 'A SYNERGY DYNAMICS INC. PRODUCTION',
+    marquee: '> CONNECT 2400 BAUD ▌ LOGIN: TFREY ▌ ACCESS GRANTED ▌ LOADING PROFILE.DAT ▌ PARSING RECORDS... ▌ EOF',
+    bottomBanner: 'IBM PC/AT · DOS 2.11 · 640K RAM · READY_',
     arrivals: ARRIVALS,
     exits: EXITS,
     core: CORE_GENERIC,
@@ -157,19 +149,17 @@ const ERA_CONFIGS: Record<Era, EraConfig> = {
   },
   '60s': {
     bodyClass: 'era-60s',
-    marquee: '■ DECLASSIFIED PER DIRECTIVE 12-B ■ EYES ONLY ■ DO NOT REPRODUCE ■ RETURN TO ARCHIVES ■',
-    topBanner: 'TOP SECRET // EYES ONLY',
-    bottomBanner: 'FILE NO. 7720-A · ARCHIVED',
+    marquee: '▌ JOB 0742 ▌ IBM SYSTEM/360 MODEL 65 ▌ BATCH COMPLETE ▌ RUN TIME 00:04:17 ▌ PAGES 0001 ▌ EOJ ▌',
+    bottomBanner: 'IBM 1403 LINE PRINTER · JOB 0742 · PAGE 0001 OF 0001',
     arrivals: ARRIVALS,
     exits: EXITS,
     core: CORE_GENERIC,
-    transform: (orig) => redactDates(orig),
-    scramble: scrambleRedact,
+    transform: (orig) => shiftYears(orig, -60),
+    scramble: scrambleNumeric,
   },
   west: {
     bodyClass: 'era-west',
     marquee: '★ WANTED ★ FOR DEEDS OF EXCELLENT CODE ★ REWARD: $500 IN GOLD ★ INQUIRE AT THE SALOON ★',
-    topBanner: 'WANTED — ALIVE AND HIRING',
     bottomBanner: 'TELEGRAPH THE OFFICE OF MR. FREY',
     arrivals: ARRIVALS,
     exits: EXITS,
@@ -180,7 +170,6 @@ const ERA_CONFIGS: Record<Era, EraConfig> = {
   dino: {
     bodyClass: 'era-dino',
     marquee: '◆ UGH ROCK ◆ TIM HUNT BUG ◆ FIRE GOOD ◆ STACK TRACE IN CAVE ◆ ROAR ◆',
-    topBanner: 'CAVE WALL OF TIM-OG, MIGHTY FIXER',
     bottomBanner: 'PAINTED IN OCHRE · LATE CRETACEOUS',
     arrivals: ARRIVALS,
     exits: EXITS,
@@ -189,6 +178,68 @@ const ERA_CONFIGS: Record<Era, EraConfig> = {
     scramble: (orig) => scramblePhrase(orig, 'Now', DINO_ERAS),
   },
 };
+
+// Dino-era scenery: cave-painting silhouettes (palms, volcano, brontosaurus,
+// pterodactyl). One palm SVG is used for both sides — the right copy is flipped
+// via CSS transform. Shapes fill via currentColor so era CSS controls the
+// palette; volcano lava and smoke are styled separately by class.
+const DINO_PALM_INNER =
+  `<g fill="currentColor">` +
+  `<path d="M 82 600 C 92 560 76 510 88 460 C 96 410 80 360 90 300 C 96 250 80 200 90 160 L 110 160 C 120 200 104 250 110 300 C 120 360 104 410 112 460 C 124 510 108 560 118 600 Z" />` +
+  `<path d="M 102 165 C 145 158 178 175 198 215 C 168 192 130 178 100 168 Z" />` +
+  `<path d="M 100 165 C 57 158 24 175 4 215 C 34 192 72 178 102 168 Z" />` +
+  `<path d="M 102 162 C 150 142 178 110 196 70 C 168 110 130 150 100 168 Z" />` +
+  `<path d="M 100 162 C 52 142 24 110 6 70 C 34 110 72 150 102 168 Z" />` +
+  `<path d="M 103 160 C 125 110 132 60 132 10 C 118 60 105 130 100 165 Z" />` +
+  `<path d="M 99 160 C 77 110 70 60 70 10 C 84 60 97 130 102 165 Z" />` +
+  `<path d="M 101 160 C 100 110 100 60 101 5 C 102 60 102 110 101 165 Z" />` +
+  `<circle cx="96" cy="178" r="5" />` +
+  `<circle cx="108" cy="175" r="5" />` +
+  `<circle cx="94" cy="170" r="4" />` +
+  `</g>`;
+
+const DINO_VOLCANO_INNER =
+  `<g fill="currentColor">` +
+  `<path d="M 16 320 L 86 220 L 102 232 L 130 180 L 152 195 L 178 75 L 215 130 L 252 85 L 268 175 L 290 195 L 320 230 L 384 320 Z" />` +
+  `</g>` +
+  `<g class="dino-lava">` +
+  `<path d="M 178 80 L 215 130 L 252 85 L 224 75 L 215 95 L 198 78 Z" />` +
+  `<path d="M 178 80 C 182 105 178 140 184 175 L 200 175 C 198 140 196 105 198 80 Z" />` +
+  `<path d="M 252 85 C 250 110 254 140 252 165 L 268 165 C 268 140 270 110 268 85 Z" />` +
+  `</g>` +
+  `<g class="dino-smoke">` +
+  `<ellipse class="s1" cx="208" cy="50" rx="22" ry="13" />` +
+  `<ellipse class="s2" cx="228" cy="28" rx="18" ry="11" />` +
+  `<ellipse class="s3" cx="200" cy="8" rx="20" ry="10" />` +
+  `</g>`;
+
+const DINO_BRONTO_INNER =
+  `<g fill="currentColor">` +
+  `<ellipse cx="270" cy="135" rx="115" ry="50" />` +
+  `<path d="M 175 130 C 110 100 65 50 50 12 C 50 0 68 0 80 14 C 105 50 165 100 200 125 Z" />` +
+  `<ellipse cx="56" cy="14" rx="22" ry="13" />` +
+  `<path d="M 360 130 C 415 145 460 200 488 258 C 494 270 478 272 470 264 C 435 215 395 165 345 145 Z" />` +
+  `<path d="M 208 175 L 208 270 L 234 270 L 234 175 Z" />` +
+  `<path d="M 248 180 L 248 270 L 274 270 L 274 180 Z" />` +
+  `<path d="M 292 180 L 292 270 L 318 270 L 318 180 Z" />` +
+  `<path d="M 334 175 L 334 270 L 360 270 L 360 175 Z" />` +
+  `</g>`;
+
+const DINO_PTERO_INNER =
+  `<g fill="currentColor">` +
+  `<path d="M 70 30 C 50 18 30 14 6 22 C 22 26 38 30 50 33 C 60 36 68 33 70 32 Z" />` +
+  `<path d="M 70 30 C 90 18 110 14 134 22 C 118 26 102 30 90 33 C 80 36 72 33 70 32 Z" />` +
+  `<ellipse cx="70" cy="32" rx="7" ry="5" />` +
+  `<path d="M 76 32 L 95 30 L 76 36 Z" />` +
+  `<path d="M 67 28 L 60 18 L 70 28 Z" />` +
+  `</g>`;
+
+const DINO_DECOR_HTML =
+  `<svg viewBox="0 0 200 600" class="dino-decor-palm dino-decor-palm--left" aria-hidden="true">${DINO_PALM_INNER}</svg>` +
+  `<svg viewBox="0 0 200 600" class="dino-decor-palm dino-decor-palm--right" aria-hidden="true">${DINO_PALM_INNER}</svg>` +
+  `<svg viewBox="0 0 500 280" class="dino-decor-bronto" aria-hidden="true">${DINO_BRONTO_INNER}</svg>` +
+  `<svg viewBox="0 0 400 320" class="dino-decor-volcano" aria-hidden="true">${DINO_VOLCANO_INNER}</svg>` +
+  `<svg viewBox="0 0 140 60" class="dino-decor-ptero" aria-hidden="true">${DINO_PTERO_INNER}</svg>`;
 
 // Avatar frame is 192×192. We anchor the frame so the avatar's feet land
 // near the clicked element (head extends upward from the click line), then
@@ -223,12 +274,99 @@ const BUTTONS_90S: ReadonlyArray<Button> = [
   { variant: 'res',      title: '800 × 600', sub: 'BEST VIEWED' },
 ];
 
+// Inline-SVG vintage clock face: brass bezel, parchment face with radial
+// gradient, Roman numerals, hour-tick marks, tapered spear hands. Static
+// markup; the hands rotate via CSS, so the whole asset is GPU-cheap.
+function buildWarpClock(): HTMLElement {
+  const clock = document.createElement('div');
+  clock.className = 'warp-clock';
+  clock.setAttribute('aria-hidden', 'true');
+
+  // Roman numerals on a r=32 ring around (50, 50); XII top, III right.
+  const numerals: Array<[string, number, number]> = [
+    ['XII',  50.0, 19.0],
+    ['I',    64.6, 22.9],
+    ['II',   76.1, 34.4],
+    ['III',  80.0, 50.0],
+    ['IV',   76.1, 65.6],
+    ['V',    64.6, 77.1],
+    ['VI',   50.0, 81.0],
+    ['VII',  35.4, 77.1],
+    ['VIII', 23.9, 65.6],
+    ['IX',   20.0, 50.0],
+    ['X',    23.9, 34.4],
+    ['XI',   35.4, 22.9],
+  ];
+  const numeralText = numerals
+    .map(([n, x, y]) => `<text x="${x}" y="${y}">${n}</text>`)
+    .join('');
+
+  // 12 hour-tick bars at 30° intervals, drawn as one path.
+  const ticks: string[] = [];
+  for (let i = 0; i < 12; i++) {
+    const a = (i * Math.PI) / 6;
+    const s = Math.sin(a);
+    const c = -Math.cos(a);
+    const x1 = (50 + s * 37.5).toFixed(2);
+    const y1 = (50 + c * 37.5).toFixed(2);
+    const x2 = (50 + s * 41).toFixed(2);
+    const y2 = (50 + c * 41).toFixed(2);
+    ticks.push(`M ${x1} ${y1} L ${x2} ${y2}`);
+  }
+
+  clock.innerHTML = `
+    <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <defs>
+        <radialGradient id="warp-clock-face-grad" cx="50%" cy="42%" r="60%">
+          <stop offset="0%"   stop-color="#fbf2d9"/>
+          <stop offset="80%"  stop-color="#ecdfba"/>
+          <stop offset="100%" stop-color="#d8c896"/>
+        </radialGradient>
+        <linearGradient id="warp-clock-bezel-grad" x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%"   stop-color="#d6b070"/>
+          <stop offset="50%"  stop-color="#8a6a3a"/>
+          <stop offset="100%" stop-color="#5a4422"/>
+        </linearGradient>
+      </defs>
+
+      <circle cx="50" cy="50" r="49"   fill="url(#warp-clock-bezel-grad)"/>
+      <circle cx="50" cy="50" r="47"   fill="none" stroke="#fff0c0" stroke-width="0.4" opacity="0.6"/>
+      <circle cx="50" cy="50" r="45"   fill="#3a2a18"/>
+      <circle cx="50" cy="50" r="43.5" fill="none" stroke="#c4a468" stroke-width="0.4"/>
+      <circle cx="50" cy="50" r="43"   fill="url(#warp-clock-face-grad)"/>
+
+      <path d="${ticks.join(' ')}" stroke="#3a2a18" stroke-width="1.2" stroke-linecap="round" fill="none"/>
+
+      <g font-family="'Times New Roman', Times, serif" font-weight="600" font-size="6.5" fill="#2a1c10" text-anchor="middle" dominant-baseline="central">
+        ${numeralText}
+      </g>
+
+      <path class="warp-clock-hand warp-clock-hand--hour"
+            d="M 50 50 L 47.8 28 L 50 22 L 52.2 28 Z"
+            fill="#1a120a" stroke="#3a2a18" stroke-width="0.3" stroke-linejoin="round"/>
+      <path class="warp-clock-hand warp-clock-hand--minute"
+            d="M 50 50 L 48.7 14 L 50 9 L 51.3 14 Z"
+            fill="#1a120a" stroke="#3a2a18" stroke-width="0.3" stroke-linejoin="round"/>
+
+      <circle cx="50" cy="50" r="2.6" fill="#3a2a18"/>
+      <circle cx="50" cy="50" r="1.4" fill="#c4a468"/>
+      <circle cx="50" cy="50" r="0.5" fill="#1a120a"/>
+    </svg>
+  `;
+
+  return clock;
+}
+
 // 90s gets its full webring + UNDER CONSTRUCTION caution tape. Other eras get
-// the lighter top-banner / bottom-banner / marquee trio. All decor lives
-// outside the resume so the static markup stays clean when no era is active.
+// the lighter bottom-banner / marquee pair. All decor lives outside the resume
+// so the static markup stays clean when no era is active. Decor stays anchored
+// to the viewport bottom so era changes never shift the resume content (and
+// the dates the user is clicking) down the page.
 function buildDecor(): HTMLElement {
   const existing = document.querySelector<HTMLElement>('.timewarp-avatar');
   if (existing) return existing;
+
+  document.body.appendChild(buildWarpClock());
 
   const construction = document.createElement('div');
   construction.className = 'era-90s-construction';
@@ -258,13 +396,8 @@ function buildDecor(): HTMLElement {
   }
   document.body.appendChild(buttons);
 
-  // Top / bottom banners — content swaps per era. Hidden via CSS unless an
-  // era class is on the body (and the era's CSS opts the banner in).
-  const topBanner = document.createElement('div');
-  topBanner.className = 'era-top-banner';
-  topBanner.setAttribute('aria-hidden', 'true');
-  document.body.appendChild(topBanner);
-
+  // Bottom banner — content swaps per era. Hidden via CSS unless an era class
+  // is on the body (and the era's CSS opts the banner in).
   const bottomBanner = document.createElement('div');
   bottomBanner.className = 'era-bottom-banner';
   bottomBanner.setAttribute('aria-hidden', 'true');
@@ -278,6 +411,15 @@ function buildDecor(): HTMLElement {
   marquee.appendChild(marqueeText);
   document.body.appendChild(marquee);
 
+  // Dino-only scenery. Lives in DOM permanently; CSS shows it only under
+  // body.era-dino and hides it on narrow viewports where the side margins
+  // aren't wide enough to host palms without crashing into the resume.
+  const dinoDecor = document.createElement('div');
+  dinoDecor.className = 'era-dino-decor';
+  dinoDecor.setAttribute('aria-hidden', 'true');
+  dinoDecor.innerHTML = DINO_DECOR_HTML;
+  document.body.appendChild(dinoDecor);
+
   const avatarEl = document.createElement('div');
   avatarEl.className = 'timewarp-avatar';
   avatarEl.setAttribute('aria-hidden', 'true');
@@ -286,17 +428,14 @@ function buildDecor(): HTMLElement {
 }
 
 function applyEraDecor(era: Era | null) {
-  const top = document.querySelector<HTMLElement>('.era-top-banner');
   const bottom = document.querySelector<HTMLElement>('.era-bottom-banner');
   const marquee = document.querySelector<HTMLElement>('.era-marquee > span');
   if (era === null) {
-    if (top) top.textContent = '';
     if (bottom) bottom.textContent = '';
     if (marquee) marquee.textContent = '';
     return;
   }
   const cfg = ERA_CONFIGS[era];
-  if (top) top.textContent = cfg.topBanner ?? '';
   if (bottom) bottom.textContent = cfg.bottomBanner ?? '';
   if (marquee) marquee.textContent = cfg.marquee;
 }
@@ -393,7 +532,12 @@ export function initTimeWarp() {
       void body.offsetWidth;
       body.classList.add('is-time-warping');
     }
-    playTimeWarp();
+    // Higher index = further back in time. Going TO a higher index (or from
+    // present into any era) is a back-whoosh; going TO a lower index (or back
+    // to present) is the reversed whoosh.
+    const fromIdx = currentEra ? ERA_SEQUENCE.indexOf(currentEra) : -1;
+    const toIdx = targetEra ? ERA_SEQUENCE.indexOf(targetEra) : -1;
+    playTimeWarp(toIdx > fromIdx ? 'back' : 'forward');
 
     const cfg = targetEra ? ERA_CONFIGS[targetEra] : null;
     metas.forEach((el, slot) => {
@@ -448,14 +592,24 @@ export function initTimeWarp() {
     avatar.scheduleCore(core, T_CORE_START);
     avatar.scheduleExit(exit, T_EXIT_START);
 
-    // Un-warp at the end of the core — audience watches the full fix gesture,
-    // THEN the page snaps back. The flash overlaps the held standing pose
-    // between core and exit.
-    fixSequenceTimers.push(window.setTimeout(() => flip(null), T_CORE_END));
+    // Un-warp is a fast-forward through each era between the current one and
+    // present, evenly spaced across the core gesture. The final flip(null)
+    // lands at T_CORE_END so the flash still overlaps the held standing pose
+    // between core and exit. Single-era warps (90s) get one transition; deeper
+    // warps (dino) strobe through 5.
+    const stepsToTake = currentEraIndex + 1;
+    const stepMs = core.durationMs / stepsToTake;
+    for (let i = 0; i < stepsToTake; i++) {
+      const nextIndex = currentEraIndex - 1 - i;
+      const targetEra: Era | null = nextIndex < 0 ? null : ERA_SEQUENCE[nextIndex];
+      const at = T_CORE_START + (i + 1) * stepMs;
+      fixSequenceTimers.push(window.setTimeout(() => flip(targetEra), at));
+    }
     stateResetTimer = window.setTimeout(() => {
       state = 'dormant';
       currentEraIndex = -1;
       stateResetTimer = null;
+      end(LOCK_ID);
     }, T_DONE);
   }
 
@@ -478,7 +632,9 @@ export function initTimeWarp() {
           flip(null);
           currentEraIndex = -1;
           state = 'dormant';
+          end(LOCK_ID);
         } else {
+          if (state === 'dormant' && !tryStart(LOCK_ID)) return;
           currentEraIndex += 1;
           flip(ERA_SEQUENCE[currentEraIndex]);
           state = 'warped';
@@ -486,9 +642,25 @@ export function initTimeWarp() {
         return;
       }
 
-      if (state === 'fixing') return;
+      // Mid-fix click: dismiss Tim and let the user keep warping. If the
+      // auto un-warp has already fired (currentEra is null), restart from
+      // dormant; otherwise treat as still-warped at the current era.
+      if (state === 'fixing') {
+        clearFixTimer();
+        clearFixSequenceTimers();
+        clearStateResetTimer();
+        avatar.reset();
+        if (currentEra === null) {
+          currentEraIndex = -1;
+          state = 'dormant';
+          end(LOCK_ID);
+        } else {
+          state = 'warped';
+        }
+      }
 
       if (state === 'dormant') {
+        if (!tryStart(LOCK_ID)) return;
         currentEraIndex = 0;
         flip(ERA_SEQUENCE[0]);
         state = 'warped';

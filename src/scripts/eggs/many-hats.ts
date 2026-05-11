@@ -1,4 +1,5 @@
-import { playRoleTick } from './audio';
+import { playRoleTick } from '../lib/audio';
+import { end, tryStart } from '../lib/interaction-lock';
 
 // Founding-Engineer hat-cycle. The joke: founding engineers wear every hat.
 // Click "Founding Engineer" on the Otti row, the second word slot-machines
@@ -186,7 +187,18 @@ function hatPhysicsTick(now: number) {
     hatPhysicsFrame = requestAnimationFrame(hatPhysicsTick);
   } else {
     hatPhysicsFrame = null;
+    maybeReleaseLock();
   }
+}
+
+// role-cycle is self-reentrant under the shared interaction lock — re-clicks
+// during an active hat-cycle just re-trigger, but the lock stays held against
+// *other* interactions until both the text cycle and hat physics are quiet.
+const LOCK_ID = 'role-cycle';
+let textCycleActive = false;
+
+function maybeReleaseLock() {
+  if (!textCycleActive && activeHats.length === 0) end(LOCK_ID);
 }
 
 function spawnHatBurst(host: HTMLElement, timers: number[]) {
@@ -205,7 +217,7 @@ function spawnHatBurst(host: HTMLElement, timers: number[]) {
   });
 }
 
-export function initRoleCycle() {
+export function initManyHats() {
   const roleCycle = document.querySelector<HTMLElement>('.role-cycle');
   const roleCycleWord = roleCycle?.querySelector<HTMLElement>('.role-cycle-word') ?? null;
   const roleCycleOverlay = roleCycle?.querySelector<HTMLElement>('.role-cycle-overlay') ?? null;
@@ -230,10 +242,16 @@ export function initRoleCycle() {
 
   function start() {
     if (!roleCycle || !roleCycleWord || !roleCycleOverlay) return;
+    if (!tryStart(LOCK_ID, { reentrant: true })) return;
     clearTimers();
+    textCycleActive = true;
 
     const sequence = pickHats(HATS_PER_CYCLE);
-    if (sequence.length === 0) return;
+    if (sequence.length === 0) {
+      textCycleActive = false;
+      maybeReleaseLock();
+      return;
+    }
 
     // Show the first hat synchronously so adding `is-cycling` doesn't briefly
     // reveal an empty overlay (the original "Engineer" goes invisible the moment
@@ -265,6 +283,8 @@ export function initRoleCycle() {
       window.setTimeout(() => {
         roleCycle.classList.remove('is-cycling');
         roleCycleOverlay.classList.remove('is-flicker');
+        textCycleActive = false;
+        maybeReleaseLock();
       }, t)
     );
   }

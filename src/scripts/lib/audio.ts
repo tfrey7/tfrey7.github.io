@@ -299,38 +299,28 @@ export function playStackTap() {
   });
 }
 
-export function playTimeWarp() {
+// Whooshing time-warp — bandpass-swept white noise (the air rushing past)
+// with a sub-bass sine for weight. `direction: 'back'` is the normal forward
+// whoosh (fast attack → decay, frequencies sweep high→low). `direction:
+// 'forward'` mirrors everything: gain builds from silence to a peak and cuts
+// off abruptly, frequencies sweep low→high — the "sucking in" of time
+// reversing back to the present.
+export function playTimeWarp(direction: 'back' | 'forward' = 'back') {
   const ctx = readyCtx();
   if (!ctx) return;
 
   const now = ctx.currentTime;
-  const dur = 0.34;
+  const dur = 0.38;
+  const reverse = direction === 'forward';
 
-  // Descending sawtooth sweep — the "whoom" of a tape rewinding past you.
-  // High Q on the lowpass gives the swept sound its watery resonance.
-  const osc = ctx.createOscillator();
-  osc.type = 'sawtooth';
-  osc.frequency.setValueAtTime(1500, now);
-  osc.frequency.exponentialRampToValueAtTime(140, now + dur);
+  const noiseStart = reverse ? 400  : 3000;
+  const noiseEnd   = reverse ? 3000 : 400;
+  const subStart   = reverse ? 40   : 200;
+  const subEnd     = reverse ? 200  : 40;
 
-  const filter = ctx.createBiquadFilter();
-  filter.type = 'lowpass';
-  filter.frequency.setValueAtTime(2400, now);
-  filter.frequency.exponentialRampToValueAtTime(600, now + dur);
-  filter.Q.value = 5;
-
-  const gain = ctx.createGain();
-  gain.gain.setValueAtTime(0, now);
-  gain.gain.linearRampToValueAtTime(0.05, now + 0.02);
-  gain.gain.exponentialRampToValueAtTime(0.0001, now + dur);
-
-  osc.connect(filter).connect(gain).connect(ctx.destination);
-  osc.start(now);
-  osc.stop(now + dur + 0.02);
-
-  // VHS-tape hiss layered underneath, bandpass sweeping the same direction.
-  const noiseDur = dur;
-  const buffer = ctx.createBuffer(1, Math.floor(ctx.sampleRate * noiseDur), ctx.sampleRate);
+  // White-noise body — bandpass sweep is the dominant "whoosh" character.
+  // Modest Q keeps it windy rather than pitched.
+  const buffer = ctx.createBuffer(1, Math.floor(ctx.sampleRate * dur), ctx.sampleRate);
   const data = buffer.getChannelData(0);
   for (let i = 0; i < data.length; i++) {
     data[i] = Math.random() * 2 - 1;
@@ -338,20 +328,45 @@ export function playTimeWarp() {
   const noise = ctx.createBufferSource();
   noise.buffer = buffer;
 
-  const noiseFilter = ctx.createBiquadFilter();
-  noiseFilter.type = 'bandpass';
-  noiseFilter.frequency.setValueAtTime(2600, now);
-  noiseFilter.frequency.exponentialRampToValueAtTime(800, now + noiseDur);
-  noiseFilter.Q.value = 1.6;
+  const filter = ctx.createBiquadFilter();
+  filter.type = 'bandpass';
+  filter.frequency.setValueAtTime(noiseStart, now);
+  filter.frequency.exponentialRampToValueAtTime(noiseEnd, now + dur);
+  filter.Q.value = 1.3;
+
+  // Sub-bass sine for weight — way below the noise band so it adds body
+  // without reading as a pitched tone.
+  const sub = ctx.createOscillator();
+  sub.type = 'sine';
+  sub.frequency.setValueAtTime(subStart, now);
+  sub.frequency.exponentialRampToValueAtTime(subEnd, now + dur);
 
   const noiseGain = ctx.createGain();
-  noiseGain.gain.setValueAtTime(0, now);
-  noiseGain.gain.linearRampToValueAtTime(0.035, now + 0.03);
-  noiseGain.gain.exponentialRampToValueAtTime(0.0001, now + noiseDur);
+  const subGain = ctx.createGain();
+  if (reverse) {
+    // Build from silence → peak → abrupt cut: the reverse-playback shape.
+    noiseGain.gain.setValueAtTime(0.0001, now);
+    noiseGain.gain.exponentialRampToValueAtTime(0.11, now + dur);
+    noiseGain.gain.linearRampToValueAtTime(0, now + dur + 0.012);
+    subGain.gain.setValueAtTime(0.0001, now);
+    subGain.gain.exponentialRampToValueAtTime(0.06, now + dur);
+    subGain.gain.linearRampToValueAtTime(0, now + dur + 0.012);
+  } else {
+    // Fast attack → exp decay: wind rushing past as time recedes.
+    noiseGain.gain.setValueAtTime(0, now);
+    noiseGain.gain.linearRampToValueAtTime(0.11, now + 0.025);
+    noiseGain.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+    subGain.gain.setValueAtTime(0, now);
+    subGain.gain.linearRampToValueAtTime(0.06, now + 0.025);
+    subGain.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+  }
 
-  noise.connect(noiseFilter).connect(noiseGain).connect(ctx.destination);
+  noise.connect(filter).connect(noiseGain).connect(ctx.destination);
+  sub.connect(subGain).connect(ctx.destination);
   noise.start(now);
-  noise.stop(now + noiseDur);
+  noise.stop(now + dur + 0.05);
+  sub.start(now);
+  sub.stop(now + dur + 0.05);
 }
 
 export function playRoleTick(pitch: number) {

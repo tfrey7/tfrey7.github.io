@@ -15,7 +15,25 @@ export type AvatarAnim = {
   // cores where the gesture needs to keep going while something else (e.g.
   // a JS-driven translate) plays out at a different tempo.
   cycles?: number;
+  // Frames to skip from the start of the sprite. Used to work around
+  // generated sprites whose leading frames are dead time (e.g. character
+  // standing still before the action starts). Implemented via negative
+  // animation-delay so the visible animation begins mid-grid; the avatar's
+  // last frame is unaffected so the seam contract still holds.
+  // Only meaningful with cycles: 1 — subsequent cycles would replay the
+  // skipped frames.
+  skipFrames?: number;
 };
+
+// Effective on-screen duration: total grid time minus any leading frames
+// the sprite is configured to skip. Callers that gate other timing on the
+// core's visible end (e.g. the Greenhouse sweep translate) must use this,
+// not durationMs * cycles.
+export function getCoreDurationMs(anim: AvatarAnim): number {
+  const total = anim.durationMs * (anim.cycles ?? 1);
+  const skipMs = (anim.skipFrames ?? 0) * (anim.durationMs / 25);
+  return total - skipMs;
+}
 
 export const ARRIVALS: AvatarAnim[] = [
   { sprite: '/sprites/tim/arrivals/somersault.png', durationMs: 1100 },
@@ -79,6 +97,7 @@ export function createAvatarController(el: HTMLElement): AvatarController {
     el.style.removeProperty('--sprite-url');
     el.style.removeProperty('--anim-duration');
     el.style.removeProperty('--anim-row-duration');
+    el.style.removeProperty('--anim-delay');
   }
 
   // Mirrors the whole appearance horizontally. Apply BEFORE startArrival so
@@ -107,6 +126,14 @@ export function createAvatarController(el: HTMLElement): AvatarController {
     // behavior unchanged.
     el.style.setProperty('--anim-x-iters', `${5 * cycles}`);
     el.style.setProperty('--anim-y-iters', `${cycles}`);
+    // Negative animation-delay used by sprites with leading dead frames
+    // (see AvatarAnim.skipFrames). Per-frame is durationMs/25, and the same
+    // delay value advances both X and Y by the same number of frames since
+    // X per-step (row_duration/5) equals Y per-step / 5 only nominally —
+    // in practice both work out to the same ms-per-frame, so a single
+    // delay shifts both animations consistently.
+    const skipMs = (anim.skipFrames ?? 0) * (anim.durationMs / 25);
+    el.style.setProperty('--anim-delay', `${-skipMs}ms`);
   }
 
   function startArrival(arrival: AvatarAnim) {
@@ -118,7 +145,7 @@ export function createAvatarController(el: HTMLElement): AvatarController {
   }
 
   function scheduleCore(core: AvatarAnim, startMs: number) {
-    const totalMs = core.durationMs * (core.cycles ?? 1);
+    const totalMs = getCoreDurationMs(core);
     timers.push(
       window.setTimeout(() => {
         loadAnim(core);
