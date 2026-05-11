@@ -33,3 +33,6 @@ pnpm-debug.log*
 
 # stray screenshots at repo root (real assets live in public/ or references/)
 /*.png
+
+# source material for asset generation; not consumed at build time
+references/
