@@ -1,153 +1,71 @@
-// Idle-discovery hints. When the user goes a while without clicking, we
-// quietly pulse one of the interactive Easter-egg triggers they haven't
-// found yet. One nudge at a time, cycles through, and stops once every
-// trigger has been clicked at least once in this session.
+// On-demand discovery hint. The user clicks a still-locked entry in the
+// journal, and we glow the corresponding trigger element on the page for
+// a few seconds so they know where to look. No idle scheduler, no passive
+// nag — the help only fires when the user invites it.
 //
-// Defers to the shared interaction lock: if an egg is mid-flight the hint
-// stays quiet, otherwise a glowing trigger would invite a click that the
-// single-flight lock silently drops.
+// CONFIG maps each journal/manifest egg id to a DOM target. Ids that have
+// no DOM-clickable trigger (e.g. `snake`, which is keyboard-only) are
+// intentionally absent — hintFor on them is a silent no-op and the
+// interviewer-voiced text in the journal does all the hinting.
 
-import { isLocked, onLockChange } from './interaction-lock';
-
-const IDLE_BEFORE_FIRST_HINT_MS = 6000;
-const IDLE_BETWEEN_HINTS_MS = 9000;
-const HINT_DURATION_MS = 3300;
 const HINT_CLASS = 'is-hinting';
+const HINT_DURATION_MS = 3300;
+// Animation is 1.1s × 3 iterations = 3.3s; matches HINT_DURATION_MS so the
+// .is-hinting class strips off exactly when the keyframes finish.
 
 type Config = {
-  id: string;
-  // What counts as "discovered" — a click anywhere in here marks it found.
+  // What counts as the discovery target — the element the user is meant
+  // to click. Defaults double as the glow target when no `hintSelector`
+  // is provided.
   triggerSelector: string;
-  // What visually pulses. Defaults to the trigger element.
+  // Override the visual glow target when the trigger isn't a good fit
+  // (e.g. a big stage container) — falls back to the trigger element.
   hintSelector?: string;
-  // If true, query all matches; any click on any match discovers the group.
-  // Only the first match is used as the hint target.
+  // True when there are multiple matching triggers (year ranges, etc.);
+  // only the first match drives the glow. Kept for future-proofing —
+  // hintFor itself just resolves to a single hintEl.
   multi?: boolean;
 };
 
-const CONFIG: Config[] = [
-  { id: 'name', triggerSelector: '.resume-name-inner' },
-  { id: 'skills', triggerSelector: '.skills-stage', hintSelector: '#skills-heading' },
-  { id: 'role', triggerSelector: '.role-cycle' },
-  { id: 'greenhouse', triggerSelector: '.greenhouse-trigger' },
-  { id: 'time-warp', triggerSelector: '.resume-meta', multi: true },
-];
-
-type Target = {
-  id: string;
-  hintEl: HTMLElement;
-  discovered: boolean;
+const CONFIG: Record<string, Config> = {
+  name: { triggerSelector: '.resume-name-inner' },
+  skills: { triggerSelector: '#skills-heading' },
+  // .ts-trigger is applied at runtime by initTsSquiggle to the lone
+  // .skill-item whose text is "TypeScript".
+  'ts-squiggle': { triggerSelector: '.skill-item.ts-trigger' },
+  'many-hats': { triggerSelector: '.role-cycle' },
+  greenhouse: { triggerSelector: '.greenhouse-trigger' },
+  'time-warp': { triggerSelector: '.resume-meta', multi: true },
+  // snake is keyboard-only ("press S") — no DOM element to glow, so no
+  // entry. hintFor('snake') falls through to a no-op.
 };
 
-export function initHint() {
+// Whether a given egg has a DOM trigger we can glow. Callers (the journal)
+// use this to decide whether to render the locked item as an interactive
+// button vs. plain text — so the cursor/hover affordance never lies.
+export function hasHint(id: string): boolean {
+  return id in CONFIG;
+}
+
+export function hintFor(id: string): void {
   if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const cfg = CONFIG[id];
+  if (!cfg) return;
+  const selector = cfg.hintSelector ?? cfg.triggerSelector;
+  const el = document.querySelector<HTMLElement>(selector);
+  if (!el) return;
 
-  const targets: Target[] = [];
+  // Center the trigger in the viewport so the glow lands somewhere the
+  // user is already looking — without this the highlight can fire on an
+  // offscreen element after the journal tucks down.
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
-  for (const cfg of CONFIG) {
-    const trigEls = cfg.multi
-      ? Array.from(document.querySelectorAll<HTMLElement>(cfg.triggerSelector))
-      : [document.querySelector<HTMLElement>(cfg.triggerSelector)].filter(
-          (el): el is HTMLElement => el !== null,
-        );
-    if (trigEls.length === 0) continue;
-
-    const hintEl = cfg.hintSelector
-      ? document.querySelector<HTMLElement>(cfg.hintSelector)
-      : trigEls[0];
-    if (!hintEl) continue;
-
-    const target: Target = { id: cfg.id, hintEl, discovered: false };
-    trigEls.forEach((el) => {
-      el.addEventListener('click', () => {
-        target.discovered = true;
-      });
-    });
-    targets.push(target);
-  }
-
-  if (targets.length === 0) return;
-
-  let idleTimer: number | null = null;
-  let hintEndTimer: number | null = null;
-  let activeHintEl: HTMLElement | null = null;
-  let hasFiredOnce = false;
-
-  function clearActiveHint() {
-    if (activeHintEl) {
-      activeHintEl.classList.remove(HINT_CLASS);
-      activeHintEl = null;
-    }
-    if (hintEndTimer !== null) {
-      window.clearTimeout(hintEndTimer);
-      hintEndTimer = null;
-    }
-  }
-
-  function schedule(delay: number) {
-    if (idleTimer !== null) window.clearTimeout(idleTimer);
-    idleTimer = window.setTimeout(fire, delay);
-  }
-
-  function fire() {
-    idleTimer = null;
-    if (document.hidden) {
-      schedule(IDLE_BETWEEN_HINTS_MS);
-      return;
-    }
-    if (isLocked()) {
-      // Another egg is mid-flight; the lock-change listener will restart
-      // the countdown when it releases.
-      return;
-    }
-    const undiscovered = targets.filter((t) => !t.discovered);
-    if (undiscovered.length === 0) return;
-
-    const pick = undiscovered[Math.floor(Math.random() * undiscovered.length)];
-    pick.hintEl.classList.add(HINT_CLASS);
-    activeHintEl = pick.hintEl;
-    hasFiredOnce = true;
-
-    hintEndTimer = window.setTimeout(() => {
-      hintEndTimer = null;
-      clearActiveHint();
-      schedule(IDLE_BETWEEN_HINTS_MS);
-    }, HINT_DURATION_MS);
-  }
-
-  function onActivity() {
-    clearActiveHint();
-    schedule(hasFiredOnce ? IDLE_BETWEEN_HINTS_MS : IDLE_BEFORE_FIRST_HINT_MS);
-  }
-
-  document.addEventListener('click', onActivity);
-  document.addEventListener('keydown', onActivity);
-  document.addEventListener('visibilitychange', () => {
-    if (document.hidden) {
-      if (idleTimer !== null) {
-        window.clearTimeout(idleTimer);
-        idleTimer = null;
-      }
-      clearActiveHint();
-    } else if (idleTimer === null) {
-      schedule(hasFiredOnce ? IDLE_BETWEEN_HINTS_MS : IDLE_BEFORE_FIRST_HINT_MS);
-    }
-  });
-
-  // While an egg holds the lock, pause the idle countdown and hide any
-  // active glow. When the lock releases, start a fresh countdown so the
-  // next hint waits a real idle window rather than firing immediately.
-  onLockChange(() => {
-    if (isLocked()) {
-      if (idleTimer !== null) {
-        window.clearTimeout(idleTimer);
-        idleTimer = null;
-      }
-      clearActiveHint();
-    } else {
-      schedule(hasFiredOnce ? IDLE_BETWEEN_HINTS_MS : IDLE_BEFORE_FIRST_HINT_MS);
-    }
-  });
-
-  schedule(IDLE_BEFORE_FIRST_HINT_MS);
+  // Re-trigger if already mid-glow: strip and re-add on the next frame so
+  // the animation restarts instead of continuing partway through.
+  el.classList.remove(HINT_CLASS);
+  void el.offsetWidth;
+  el.classList.add(HINT_CLASS);
+  window.setTimeout(() => {
+    el.classList.remove(HINT_CLASS);
+  }, HINT_DURATION_MS);
 }

@@ -14,7 +14,7 @@ import { contact, skills, experience, education } from '../data/profile';
         </span>
       </h1>
       <p class="resume-contact">
-        <span class="location-trigger">{contact.location}</span>
+        {contact.location}
         {' • '}
         <a href={`mailto:${contact.email}`}>{contact.email}</a>
         {contact.phone ? <>{' • '}{contact.phone}</> : null}
@@ -120,8 +120,6 @@ import { contact, skills, experience, education } from '../data/profile';
 
 <script>
   import { initAllEggs } from '../scripts/eggs/manifest';
-  import { initHint } from '../scripts/lib/hint';
 
   initAllEggs();
-  initHint();
 </script>

@@ -13,7 +13,6 @@
 // playing, and yields immediately if any activity happens.
 
 import { ARRIVALS } from '../lib/avatar';
-import { markDiscovered } from '../lib/discoveries';
 import { end, isLocked, onLockChange, tryStart } from '../lib/interaction-lock';
 import { isJournalOpen } from './journal';
 
@@ -130,7 +129,6 @@ export function initIdlePeek() {
       tickTimer = window.setTimeout(tick, TICK_INTERVAL_MS);
       return;
     }
-    markDiscovered('idle-peek');
 
     const edge = pickEdge();
     const el = buildAvatar();
@@ -209,14 +207,6 @@ export function initIdlePeek() {
   onLockChange(() => {
     if (!isLocked()) scheduleFromIdle(IDLE_BEFORE_PEEK_MS);
   });
-
-  // Manual trigger on the location text. The global capture-phase click
-  // handler above runs first and aborts any in-flight peek, so by the time
-  // this bubble-phase listener calls firePeek the lock is free.
-  const locationTrigger = document.querySelector('.location-trigger');
-  if (locationTrigger) {
-    locationTrigger.addEventListener('click', () => firePeek());
-  }
 
   scheduleFromIdle(IDLE_BEFORE_PEEK_MS);
 }

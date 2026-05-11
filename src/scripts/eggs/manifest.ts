@@ -14,6 +14,7 @@
 // DOM-selector config because its shape is different (per-element selectors,
 // multi-element groups). A future cleanup could fold it in here.
 
+import { initDrawSnake } from './draw-snake';
 import { initGreenhouse } from './greenhouse';
 import { initHeader } from './header';
 import { initIdlePeek } from './idle-peek';
@@ -22,6 +23,8 @@ import { initManyHats } from './many-hats';
 import { initSkills } from './skills';
 import { initSnake } from './snake';
 import { initTimeWarp } from './time-warp';
+import { initTsSquiggle } from './ts-squiggle';
+import { initViewSource } from './view-source';
 
 export type JournalEntry = {
   // Friendly name shown once the user has triggered the egg.
@@ -51,16 +54,24 @@ export const EGGS = [
     id: 'name',
     init: initHeader,
     journal: {
-      label: 'Greets warmly',
-      hint: 'Have you said hi yet?',
+      label: 'Strong first impression',
+      hint: 'Start with the introduction.',
     },
   },
   {
     id: 'skills',
     init: initSkills,
     journal: {
-      label: 'Resilient under pressure',
-      hint: 'See what happens when his foundations drop out.',
+      label: 'Knows his stuff',
+      hint: 'Strong technicals?',
+    },
+  },
+  {
+    id: 'ts-squiggle',
+    init: initTsSquiggle,
+    journal: {
+      label: 'Not just the classics',
+      hint: 'Keeps up with modern tooling?',
     },
   },
   {
@@ -75,8 +86,8 @@ export const EGGS = [
     id: 'greenhouse',
     init: initGreenhouse,
     journal: {
-      label: 'Knows our ATS',
-      hint: 'Does he know the company he worked at?',
+      label: 'Decade at Greenhouse',
+      hint: 'Longest tenure?',
     },
   },
   {
@@ -87,24 +98,31 @@ export const EGGS = [
       hint: 'Poke at the dates on his resume.',
     },
   },
+  // Background behavior — Tim peeks from a page edge after the page has
+  // been quiet for a while. Intentionally not journaled: it's an ambient
+  // wink, not a discoverable skill.
+  { id: 'idle-peek', init: initIdlePeek },
   {
-    id: 'idle-peek',
-    init: initIdlePeek,
+    id: 'view-source',
+    init: initViewSource,
     journal: {
-      label: 'Approachable at rest',
-      hint: 'Watch him between questions — or ask where he lives.',
+      label: 'Code reads as well as the resume',
+      hint: 'Curious how he built this.',
     },
   },
   {
     id: 'snake',
     init: initSnake,
     journal: {
-      label: 'Has hidden depths',
-      hint: 'A single letter starts a classic game.',
+      label: 'Knows how to have fun',
+      hint: 'Doodles in the margins?',
     },
   },
   // Meta — the journal renders the list above. Not itself tracked.
   { id: 'journal', init: initJournal },
+  // Launcher for the snake egg via the clipboard pencil. Exposes
+  // window.__drawSnake; not itself a discovery (the snake egg is).
+  { id: 'draw-snake', init: initDrawSnake },
 ] as const satisfies readonly EggDef[];
 
 // Union of every known egg id, derived from EGGS. markDiscovered() takes this

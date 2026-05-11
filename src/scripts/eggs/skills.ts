@@ -517,7 +517,12 @@ export function initSkills() {
     }
   }
 
-  stage.addEventListener('click', (e) => {
+  // Trigger is the section heading (not the whole stage) so that smaller
+  // per-item Easter eggs — e.g. the TypeScript squiggle — can claim their
+  // own clicks without the cascade swallowing them.
+  const heading = stage.querySelector<HTMLElement>('#skills-heading');
+  if (!heading) return;
+  heading.addEventListener('click', (e) => {
     resumeAudio();
     startCascade(e.clientX, e.clientY);
   });

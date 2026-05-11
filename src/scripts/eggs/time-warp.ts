@@ -405,7 +405,13 @@ function buildDecor(): HTMLElement {
   const existing = document.querySelector<HTMLElement>('.timewarp-avatar');
   if (existing) return existing;
 
-  document.body.appendChild(buildWarpClock());
+  // Clock lives as a sibling of <body> (child of <html>), NOT inside body.
+  // body.is-time-warping applies `filter:` during the flash, which makes
+  // body the containing block for its position:fixed descendants — so a
+  // clock inside body would snap from viewport-anchored to body-anchored
+  // (visibly jumping by scrollY) whenever the filter toggles. Outside
+  // body, the clock's containing block is always the viewport.
+  document.documentElement.appendChild(buildWarpClock());
 
   const construction = document.createElement('div');
   construction.className = 'era-90s-construction';
@@ -515,10 +521,20 @@ export function initTimeWarp() {
   // Owned by runFix(): the un-warp callback only. Kept separate from
   // flipTimers so flip()'s clearTimers doesn't wipe it.
   const fixSequenceTimers: number[] = [];
+  // Debounced hide for the clock overlay. Each flip() re-arms this; if no
+  // new flip lands before it fires, the clock fades out.
+  let clockFadeTimer: number | null = null;
 
   function clearFlipTimers() {
     flipTimers.forEach((t) => window.clearTimeout(t));
     flipTimers.length = 0;
+  }
+
+  function clearClockFadeTimer() {
+    if (clockFadeTimer !== null) {
+      window.clearTimeout(clockFadeTimer);
+      clockFadeTimer = null;
+    }
   }
 
   function clearFixSequenceTimers() {
@@ -576,7 +592,22 @@ export function initTimeWarp() {
     // to present) is the reversed whoosh.
     const fromIdx = currentEra ? ERA_SEQUENCE.indexOf(currentEra) : -1;
     const toIdx = targetEra ? ERA_SEQUENCE.indexOf(targetEra) : -1;
-    playTimeWarp(toIdx > fromIdx ? 'back' : 'forward');
+    const goingBack = toIdx > fromIdx;
+    playTimeWarp(goingBack ? 'back' : 'forward');
+
+    // Clock overlay: visible only during a warp transition. Re-armed on
+    // every flip so a back-to-back sequence (rapid clicks, or Tim's
+    // un-warp strobe through eras) keeps the clock up without re-popping.
+    // After the trailing pause it fades out, so just sitting in an era
+    // doesn't leave the clock floating. Hands run counter-clockwise when
+    // traveling back in time, clockwise when un-warping toward the present.
+    body.classList.toggle('time-warp-reverse', goingBack);
+    body.classList.add('time-warp-active');
+    clearClockFadeTimer();
+    clockFadeTimer = window.setTimeout(() => {
+      body.classList.remove('time-warp-active');
+      clockFadeTimer = null;
+    }, FLASH_DURATION_MS);
 
     const cfg = targetEra ? ERA_CONFIGS[targetEra] : null;
     metas.forEach((el, slot) => {

@@ -274,7 +274,145 @@
 
   .skills-stage {
     position: relative;
+  }
+
+  /* Only the heading triggers the cascade now (smaller per-item eggs claim
+     the rest of the section), so the pointer affordance lives here. */
+  #skills-heading {
     cursor: pointer;
+  }
+
+  /* TypeScript squiggle Easter egg — a single .skill-item is wired up by
+     ts-squiggle.ts. Affordance is local to that word; the squiggle and the
+     popover keep all motion outside the resume's normal layout flow. */
+  .skill-item.ts-trigger {
+    cursor: pointer;
+  }
+
+  .skill-item.is-ts-erroring {
+    text-decoration: underline wavy #f14c4c;
+    text-underline-offset: 3px;
+    text-decoration-thickness: 1px;
+    animation: ts-error-pulse 240ms ease-out 1;
+  }
+
+  /* Green ✓ that flashes next to the word post-fix. Absolutely positioned
+     so it never pushes neighboring text in the comma-separated list. */
+  .skill-item.is-ts-fixed {
+    position: relative;
+  }
+  .skill-item.is-ts-fixed::after {
+    content: '✓';
+    position: absolute;
+    left: 100%;
+    top: 50%;
+    margin-left: 4px;
+    color: #4ec9b0;
+    font-weight: 700;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.85em;
+    animation: ts-check-flash 750ms ease-out 1 forwards;
+    pointer-events: none;
+  }
+
+  @keyframes ts-error-pulse {
+    0%   { text-decoration-color: transparent; }
+    100% { text-decoration-color: #f14c4c; }
+  }
+
+  @keyframes ts-check-flash {
+    0%   { opacity: 0; transform: translateY(-50%) scale(0.6); }
+    35%  { opacity: 1; transform: translateY(-50%) scale(1.15); }
+    100% { opacity: 0; transform: translateY(-50%) scale(1); }
+  }
+
+  /* VS Code–style inline diagnostic. Positioned absolutely against the
+     document so it never affects surrounding resume layout. */
+  .ts-popover {
+    position: absolute;
+    z-index: 50;
+    background: #1f1f1f;
+    color: #d4d4d4;
+    border: 1px solid #2d2d2d;
+    border-radius: 4px;
+    box-shadow: 0 6px 22px rgba(0, 0, 0, 0.35);
+    padding: 6px 10px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    line-height: 1.45;
+    min-width: 220px;
+    max-width: 360px;
+    opacity: 0;
+    transform: translateY(-3px);
+    transition: opacity 140ms ease-out, transform 140ms ease-out;
+    pointer-events: none;
+  }
+
+  .ts-popover.is-visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  .ts-popover.is-resolved {
+    opacity: 0;
+    transform: translateY(-1px);
+    transition: opacity 320ms ease-out, transform 320ms ease-out;
+  }
+
+  .ts-popover-row {
+    display: flex;
+    gap: 6px;
+    align-items: flex-start;
+  }
+
+  .ts-popover-row + .ts-popover-row {
+    margin-top: 4px;
+    padding-top: 4px;
+    border-top: 1px solid #2d2d2d;
+  }
+
+  .ts-popover-error .ts-popover-text {
+    color: #f48771;
+  }
+  .ts-popover-fix .ts-popover-text {
+    color: #cccccc;
+  }
+  .ts-popover-code {
+    color: #9cdcfe;
+  }
+
+  .ts-popover-icon,
+  .ts-popover-bulb {
+    flex: 0 0 auto;
+    line-height: 1.2;
+  }
+
+  /* Lightbulb pulses until the auto-fix triggers; then it "clicks". */
+  .ts-popover-fix .ts-popover-bulb {
+    animation: ts-bulb-pulse 900ms ease-in-out infinite;
+  }
+  .ts-popover.is-fixing .ts-popover-fix .ts-popover-bulb {
+    animation: ts-bulb-click 260ms ease-out 1 forwards;
+  }
+
+  @keyframes ts-bulb-pulse {
+    0%, 100% { opacity: 0.75; transform: scale(1); }
+    50%      { opacity: 1;    transform: scale(1.1); }
+  }
+  @keyframes ts-bulb-click {
+    0%   { transform: scale(1); }
+    45%  { transform: scale(0.82); }
+    100% { transform: scale(1.05); opacity: 0.45; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .skill-item.is-ts-erroring { animation: none; }
+    .skill-item.is-ts-fixed::after { animation: none; opacity: 1; }
+    .ts-popover { transition: opacity 100ms linear; transform: none; }
+    .ts-popover.is-visible,
+    .ts-popover.is-resolved { transform: none; }
+    .ts-popover-fix .ts-popover-bulb,
+    .ts-popover.is-fixing .ts-popover-fix .ts-popover-bulb { animation: none; }
   }
 
   /* Skills avatar — sprite-agnostic player. Each interaction is built from three
@@ -1008,15 +1146,31 @@
     100% { filter: none; }
   }
 
-  /* Spinning-clock overlay that pops in for the warp. The clock itself is an
-     inline SVG built in time-warp.ts (brass bezel, Roman numerals). Pop is a
-     transform on the wrapper; hand spins are transforms on the SVG paths.
+  /* Spinning-clock overlay. Pops in for each warp transition and stays up
+     across rapid back-to-back flips (manual era stepping or Tim's un-warp
+     strobe), then fades out when the user pauses inside an era or lands
+     back in the present. The clock itself is an inline SVG built in
+     time-warp.ts (brass bezel, Roman numerals).
+
+     Visibility is driven by body.time-warp-active. It's added at every
+     flip() and a debounced timer in JS removes it after FLASH_DURATION_MS
+     of no further flips — that's what gives the "stays up across a
+     sequence, fades on a pause" behavior. Decoupled from .is-time-warping
+     (which only marks the brief per-flip flash) so tying the clock to the
+     flash class doesn't restart its entry on every era step.
+
+     Direction: body.time-warp-reverse flips the hand spins so they run
+     backwards while un-warping toward the present.
+
      transform-box: view-box anchors hand rotation to the SVG's coord (50,50)
      rather than each path's bounding box, so they pivot from the center.
-     Positioned in vw/vh, not %, because body.is-time-warping has filter:,
-     which makes body the containing block for fixed descendants — so % would
-     resolve against body dimensions (which change per era) and the clock
-     would drift between eras. vw/vh always resolve against the viewport. */
+
+     IMPORTANT: .warp-clock is appended outside <body> (as a child of
+     <html>) so body.is-time-warping's filter: never makes body the
+     containing block for the clock. With the clock inside body, the
+     containing-block switch when the filter toggled snapped the clock by
+     scrollY on a scrolled page. Living outside body, the clock's
+     containing block is always the viewport. */
   .warp-clock {
     position: fixed;
     left: 50vw;
@@ -1028,6 +1182,8 @@
     pointer-events: none;
     z-index: 105;
     opacity: 0;
+    transform: scale(0.2) rotate(-30deg);
+    transition: opacity 0.35s ease-out, transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
     filter: drop-shadow(0 6px 16px rgba(0, 0, 0, 0.45));
     will-change: transform, opacity;
   }
@@ -1044,33 +1200,33 @@
     will-change: transform;
   }
 
-  body.is-time-warping .warp-clock {
-    animation: warp-clock-pop 0.5s ease-out;
+  /* Selectors use ~ (general sibling) because .warp-clock lives outside
+     <body> — see time-warp.ts for why. body's classes still drive state;
+     the clock is just rendered as a sibling so it can stay viewport-fixed. */
+  body.time-warp-active ~ .warp-clock {
+    opacity: 1;
+    transform: scale(1.08) rotate(0deg);
   }
 
-  body.is-time-warping .warp-clock-hand--hour {
-    animation: warp-clock-hour-spin 0.5s ease-out;
+  body.time-warp-active ~ .warp-clock .warp-clock-hand--hour {
+    animation: warp-clock-hour-spin 1.4s linear infinite;
   }
 
-  body.is-time-warping .warp-clock-hand--minute {
-    animation: warp-clock-minute-spin 0.5s ease-out;
+  body.time-warp-active ~ .warp-clock .warp-clock-hand--minute {
+    animation: warp-clock-minute-spin 0.28s linear infinite;
   }
 
-  @keyframes warp-clock-pop {
-    0%   { opacity: 0; transform: scale(0.2) rotate(-30deg); }
-    18%  { opacity: 1; transform: scale(1.08) rotate(0deg); }
-    82%  { opacity: 1; transform: scale(1.08) rotate(0deg); }
-    100% { opacity: 0; transform: scale(0.2) rotate(30deg); }
+  body.time-warp-reverse ~ .warp-clock .warp-clock-hand--hour,
+  body.time-warp-reverse ~ .warp-clock .warp-clock-hand--minute {
+    animation-direction: reverse;
   }
 
   @keyframes warp-clock-hour-spin {
-    from { transform: rotate(0); }
-    to   { transform: rotate(900deg); }
+    to { transform: rotate(360deg); }
   }
 
   @keyframes warp-clock-minute-spin {
-    from { transform: rotate(0); }
-    to   { transform: rotate(2520deg); }
+    to { transform: rotate(360deg); }
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -2258,10 +2414,6 @@
     .idle-peek-avatar { display: none; }
   }
 
-  .location-trigger {
-    cursor: pointer;
-  }
-
   /* ---------- Snake easter egg ---------- */
   /* Self-contained CRT-styled modal. Spawned by openSnake() in
      scripts/eggs/snake.ts when the (future) keyboard-click trigger fires;
@@ -2449,6 +2601,172 @@
 
   /* ---------- /Snake easter egg ---------- */
 
+  /* ---------- Draw-a-Snake launcher ---------- */
+  /* Fullscreen overlay that appears when the user clicks the pencil on the
+     interview clipboard. They draw a shape; if it reads as a snake, the
+     Snake game opens. Paper-feel surface so the metaphor — "doodle on the
+     clipboard" — carries from clip to canvas. */
+
+  .draw-snake-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 9500;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: rgba(20, 14, 6, 0.55);
+    animation: draw-snake-overlay-in 180ms ease-out;
+  }
+
+  @keyframes draw-snake-overlay-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+
+  .draw-snake-frame {
+    display: flex;
+    flex-direction: column;
+    width: min(720px, 100%);
+    height: min(560px, 100%);
+    background: #f4e8c8;
+    border-radius: 4px;
+    box-shadow:
+      0 0 0 1px #7a5a30 inset,
+      0 24px 60px rgba(0, 0, 0, 0.45);
+    overflow: hidden;
+    color: #3a2814;
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    animation: draw-snake-frame-in 220ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  @keyframes draw-snake-frame-in {
+    from { transform: scale(0.94); opacity: 0; }
+    to   { transform: scale(1);    opacity: 1; }
+  }
+
+  .draw-snake-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 14px;
+    background: #ead7a8;
+    border-bottom: 1px solid #c8a866;
+  }
+
+  .draw-snake-title {
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    font-size: 14px;
+  }
+
+  .draw-snake-cancel {
+    margin-left: auto;
+    width: 26px;
+    height: 26px;
+    border: 1px solid #b89048;
+    background: transparent;
+    color: #3a2814;
+    font-size: 18px;
+    line-height: 1;
+    border-radius: 3px;
+    cursor: pointer;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 120ms ease;
+  }
+  .draw-snake-cancel:hover {
+    background: #d8be7c;
+  }
+
+  /* The drawing surface itself. Faint ruled lines + subtle paper grain so it
+     reads as "loose-leaf you doodled on" rather than "input field". */
+  .draw-snake-surface {
+    flex: 1;
+    position: relative;
+    background-color: #fbf2d8;
+    background-image:
+      repeating-linear-gradient(
+        to bottom,
+        transparent 0,
+        transparent 27px,
+        rgba(95, 70, 30, 0.16) 27px,
+        rgba(95, 70, 30, 0.16) 28px
+      );
+    cursor: crosshair;
+    touch-action: none;
+    overflow: hidden;
+  }
+
+  .draw-snake-canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+
+  .draw-snake-footer {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 14px;
+    background: #ead7a8;
+    border-top: 1px solid #c8a866;
+    font-size: 12px;
+    color: #5a3f1a;
+  }
+
+  .draw-snake-status {
+    font-weight: 500;
+  }
+
+  .draw-snake-hint {
+    margin-left: auto;
+    color: #8a6a3a;
+    letter-spacing: 0.04em;
+  }
+
+  /* Success: paper briefly flushes green-tinted to confirm the recognition
+     before the Snake modal takes over. */
+  .draw-snake-overlay.is-success .draw-snake-frame {
+    box-shadow:
+      0 0 0 1px #4caf50 inset,
+      0 0 32px rgba(125, 255, 107, 0.4),
+      0 24px 60px rgba(0, 0, 0, 0.45);
+  }
+  .draw-snake-overlay.is-success .draw-snake-status {
+    color: #2f6b2f;
+  }
+
+  /* Fail: paper shakes once. Quick + bounded so it stays inside the frame. */
+  .draw-snake-overlay.is-fail .draw-snake-frame {
+    animation: draw-snake-shake 320ms ease-in-out;
+  }
+  .draw-snake-overlay.is-fail .draw-snake-status {
+    color: #a33c2e;
+  }
+
+  @keyframes draw-snake-shake {
+    0%, 100% { transform: translateX(0); }
+    20%      { transform: translateX(-6px); }
+    40%      { transform: translateX(6px); }
+    60%      { transform: translateX(-4px); }
+    80%      { transform: translateX(4px); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .draw-snake-overlay,
+    .draw-snake-frame {
+      animation: none;
+    }
+    .draw-snake-overlay.is-fail .draw-snake-frame {
+      animation: none;
+    }
+  }
+
+  /* ---------- /Draw-a-Snake launcher ---------- */
+
   /* ---------- Journal easter egg (J key) ---------- */
   /* The "journal" is rendered as an interviewer's clipboard: a tan masonite
      board with a metal clip up top and a candidate-evaluation form clipped
@@ -2457,66 +2775,64 @@
      Light vs. dark mode swaps to walnut + parchment so the metaphor reads
      under either system theme. */
 
-  .journal-backdrop {
-    position: fixed;
-    inset: 0;
-    z-index: 10000;
-    background: rgba(5, 5, 15, 0);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 24px;
-    opacity: 0;
-    transition: background 200ms ease, opacity 200ms ease;
-  }
-
-  .journal-backdrop.is-open {
-    background: rgba(5, 5, 15, 0.62);
-    opacity: 1;
-  }
-
-  .journal-backdrop.is-closing {
-    background: rgba(5, 5, 15, 0);
-    opacity: 0;
-  }
-
   /* The clipboard itself — masonite/tan board with hard edges and a
-     stepped-shadow outline (no border-radius, no smooth gradient). The
-     clip and paper sit inside this. */
+     stepped-shadow outline (no border-radius, no smooth gradient). It lives
+     at the bottom of the viewport persistently after first appearance, and
+     slides between a tucked anchor (top strip visible) and an open anchor
+     (fully on-screen). No modal/backdrop: the page underneath stays
+     interactive so eggs can still be discovered while the clipboard is open.
+
+     Default transform parks it fully below the viewport; .is-tucked and
+     .is-open drive the two visible anchor positions. The page-load entrance
+     animates from default → tucked via the same transition. */
   .journal-panel {
-    position: relative;
+    position: fixed;
+    bottom: 0;
+    left: 50%;
+    z-index: 9000;
     background: #b58a4e;
     padding: 38px 18px 22px;
-    min-width: min(420px, calc(100vw - 48px));
-    max-width: min(540px, calc(100vw - 48px));
-    max-height: calc(100vh - 64px);
-    overflow-y: auto;
+    width: min(460px, calc(100vw - 48px));
+    max-height: calc(100vh - 48px);
+    /* Allow the pencil's eraser end to overhang the masonite top edge. The
+       paper itself can't grow past the panel under realistic checklist
+       sizes, so dropping the clip is safe. */
+    overflow: visible;
     box-shadow:
       inset 0 0 0 2px #6e4824,
       inset 0 2px 0 0 rgba(255, 255, 255, 0.15),
-      0 18px 50px rgba(0, 0, 0, 0.5);
-    transform: scale(0.94) translateY(8px);
-    opacity: 0;
-    transition:
-      transform 220ms cubic-bezier(0.34, 1.4, 0.64, 1),
-      opacity 180ms ease;
+      0 -10px 32px rgba(0, 0, 0, 0.35);
+    transform: translate(-50%, 100%);
+    transition: transform 420ms cubic-bezier(0.22, 1, 0.36, 1);
   }
 
-  .journal-backdrop.is-open .journal-panel {
-    transform: scale(1) translateY(0);
-    opacity: 1;
+  /* Tucked: most of the clipboard is below the fold; only the clip + a
+     strip of paper (title + candidate line) shows above the viewport edge.
+     The whole tucked area is clickable as one big "open" affordance — the
+     cursor reflects that. */
+  .journal-panel.is-tucked {
+    transform: translate(-50%, calc(100% - 96px));
+    cursor: pointer;
+  }
+  .journal-panel.is-tucked:hover {
+    transform: translate(-50%, calc(100% - 120px));
   }
 
-  .journal-backdrop.is-closing .journal-panel {
-    transform: scale(0.96) translateY(6px);
-    opacity: 0;
-    transition:
-      transform 160ms ease,
-      opacity 160ms ease;
+  /* Open: lift the whole clipboard into view with a small bottom gutter so
+     it doesn't hug the viewport edge. Inner paper handles its own scrolling
+     if the checklist outgrows the available height. */
+  .journal-panel.is-open {
+    transform: translate(-50%, -24px);
+  }
+  .journal-panel.is-open .journal-paper {
+    max-height: calc(100vh - 96px);
+    overflow-y: auto;
   }
 
   /* The metal clip across the top of the clipboard. Stepped silver bands
-     give a chunky pixel-art feel; two screws sit at either end. */
+     give a chunky pixel-art feel; two screws sit at either end. Renders as
+     a real <button> so keyboard users get focus + Enter/Space to toggle —
+     padding/border/font reset to avoid native button chrome leaking in. */
   .journal-clip {
     position: absolute;
     top: 6px;
@@ -2524,6 +2840,11 @@
     transform: translateX(-50%);
     width: 96px;
     height: 22px;
+    padding: 0;
+    border: 0;
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
     background:
       linear-gradient(
         to bottom,
@@ -2538,6 +2859,10 @@
       inset 0 0 0 2px #3a3a3a,
       0 2px 0 0 rgba(0, 0, 0, 0.3);
   }
+  .journal-clip:focus-visible {
+    outline: 2px solid #2f7a3e;
+    outline-offset: 2px;
+  }
 
   .journal-clip::before,
   .journal-clip::after {
@@ -2551,6 +2876,57 @@
   }
   .journal-clip::before { left: 10px; }
   .journal-clip::after  { right: 10px; }
+
+  /* Pencil tossed onto the clipboard. Lives above the paper, in the strip
+     that's visible in both tucked and open states, so it's reachable any
+     time. Rotated to read as "set down at an angle" — drop-shadow gives
+     just enough lift to read as a separate object from the board. */
+  .journal-pencil {
+    position: absolute;
+    /* bottom + rotation are tuned together: at -65deg the rotated pencil
+       reaches ~75px below center, so bottom: 64px lands the tip just at
+       the clipboard's bottom edge. Negative `right` slides the whole
+       pencil toward the right edge — rotation pulls the visible
+       rightmost point inward, so we compensate to keep the eraser end
+       close to the paper's right margin. */
+    bottom: 64px;
+    right: -16px;
+    width: 160px;
+    height: 14px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+    /* Steep counterclockwise tilt: pencil reads as nearly vertical with
+       the eraser high on the right and the tip dropping to the
+       lower-left, kissing the bottom-right corner. */
+    transform: rotate(-65deg);
+    transform-origin: 50% 50%;
+    filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.35));
+    transition: transform 200ms ease;
+    z-index: 2;
+  }
+  .journal-pencil:hover {
+    /* On hover, tilt slightly more vertical and lift — reads as the tip
+       lifting off the page, like the pencil is being picked up to write. */
+    transform: rotate(-72deg) translate(0, -4px) scale(1.04);
+  }
+  .journal-pencil:focus-visible {
+    outline: 2px solid #2f7a3e;
+    outline-offset: 3px;
+    border-radius: 3px;
+  }
+  .journal-pencil svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .journal-pencil {
+      transition: none;
+    }
+  }
 
   /* The sheet of paper clipped to the board. Cream stock, faint blue rule
      lines, ink-colored text. Line height matches the rule step so text
@@ -2628,6 +3004,37 @@
     color: #1f1a14;
   }
 
+  /* Unfound rows render a real <button> so clicking tucks the panel and
+     glows the corresponding trigger on the page. Reset native button chrome
+     so the button reads as the same row geometry as a found one — just
+     interactive. Found rows stay as plain text inside the <li>. */
+  .journal-item-btn {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    width: 100%;
+    padding: 0;
+    margin: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    line-height: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  .journal-item-btn:hover .journal-label--locked,
+  .journal-item-btn:focus-visible .journal-label--locked {
+    color: rgba(31, 26, 20, 0.85);
+    text-decoration: underline;
+    text-decoration-style: dotted;
+    text-underline-offset: 2px;
+  }
+  .journal-item-btn:focus-visible {
+    outline: 2px solid #2f7a3e;
+    outline-offset: 2px;
+  }
+
   /* Hand-drawn-feeling checkbox: 2px ink-color border, paper-color fill,
      sized to sit on a rule line. */
   .journal-check {
@@ -2669,6 +3076,39 @@
     letter-spacing: 0.12em;
     text-transform: uppercase;
     border-top: 1px dashed rgba(31, 26, 20, 0.25);
+  }
+
+  /* "Clear notes" action: a quiet utility button below the checklist. Dashed
+     border keeps it in the hand-drawn-checkbox visual family rather than
+     reading as a primary CTA — the recruiter's "scribble over the notes"
+     gesture, not a glossy app button. */
+  .journal-actions {
+    display: flex;
+    justify-content: center;
+    margin-top: 10px;
+  }
+
+  .journal-clear-btn {
+    background: transparent;
+    border: 1px dashed rgba(31, 26, 20, 0.4);
+    color: rgba(31, 26, 20, 0.7);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    padding: 4px 12px;
+    cursor: pointer;
+    transition:
+      color 140ms ease,
+      border-color 140ms ease,
+      background 140ms ease;
+  }
+  .journal-clear-btn:hover,
+  .journal-clear-btn:focus-visible {
+    background: rgba(31, 26, 20, 0.06);
+    color: #1f1a14;
+    border-color: rgba(31, 26, 20, 0.6);
+    outline: none;
   }
 
   /* HIRED stamp. Appears only when every entry is ticked — rendered by
@@ -2775,9 +3215,23 @@
       color: #b8ff9e;
     }
     .journal-label--locked { color: rgba(227, 216, 184, 0.4); }
+    .journal-item-btn:hover .journal-label--locked,
+    .journal-item-btn:focus-visible .journal-label--locked {
+      color: #f5ead0;
+    }
     .journal-footer {
       color: rgba(227, 216, 184, 0.5);
       border-top-color: rgba(227, 216, 184, 0.2);
+    }
+    .journal-clear-btn {
+      border-color: rgba(227, 216, 184, 0.35);
+      color: rgba(227, 216, 184, 0.65);
+    }
+    .journal-clear-btn:hover,
+    .journal-clear-btn:focus-visible {
+      background: rgba(227, 216, 184, 0.08);
+      color: #f5ead0;
+      border-color: rgba(227, 216, 184, 0.6);
     }
     /* Brighter stamp red so it pops on dark parchment; ink still feels red
        rather than highlighter. */
@@ -2815,7 +3269,6 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .journal-backdrop,
     .journal-panel {
       transition: none;
     }
@@ -2825,4 +3278,189 @@
   }
 
   /* ---------- /Journal easter egg ---------- */
+
+  /* ---------- View Source easter egg ---------- */
+  /* Right-click anywhere on the resume → a dark code-editor modal slides in
+     showing a stylized JSX "source" of the page. Styled as a code editor
+     (mac traffic-light dots, tab, line-number gutter, Dracula-leaning token
+     colors) so the metaphor reads instantly as "you're looking at code". */
+
+  .view-source-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 10000;
+    background: rgba(8, 10, 16, 0.62);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    animation: view-source-backdrop-in 200ms ease-out;
+  }
+
+  @keyframes view-source-backdrop-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+
+  .view-source-modal {
+    background: #1e1f29;
+    color: #c8ccd4;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 13px;
+    line-height: 1.55;
+    width: min(760px, 100%);
+    max-height: min(80vh, 720px);
+    border-radius: 10px;
+    box-shadow:
+      0 0 0 1px rgba(255, 255, 255, 0.04) inset,
+      0 18px 60px rgba(0, 0, 0, 0.6);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    animation: view-source-modal-in 240ms cubic-bezier(0.34, 1.5, 0.64, 1);
+  }
+
+  @keyframes view-source-modal-in {
+    from { transform: translateY(-10px) scale(0.96); opacity: 0; }
+    to   { transform: translateY(0)     scale(1);    opacity: 1; }
+  }
+
+  .view-source-header {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 10px 12px 0;
+    background: #181922;
+    border-bottom: 1px solid #2a2c39;
+  }
+
+  .view-source-traffic {
+    display: flex;
+    gap: 6px;
+    padding-bottom: 10px;
+  }
+  .view-source-traffic span {
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+    display: block;
+  }
+  .view-source-traffic span:nth-child(1) { background: #ff5f57; }
+  .view-source-traffic span:nth-child(2) { background: #febc2e; }
+  .view-source-traffic span:nth-child(3) { background: #28c840; }
+
+  /* The active editor tab — sits flush with the header bottom so it reads
+     as the foreground document. Tiny color square mimics a file-type icon. */
+  .view-source-tab {
+    font-size: 12px;
+    color: #c8ccd4;
+    background: #1e1f29;
+    border: 1px solid #2a2c39;
+    border-bottom-color: #1e1f29;
+    padding: 6px 12px;
+    border-radius: 6px 6px 0 0;
+    position: relative;
+    bottom: -1px;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .view-source-tab::before {
+    content: '';
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    background: #61afef;
+    border-radius: 2px;
+  }
+
+  .view-source-close {
+    margin-left: auto;
+    margin-bottom: 8px;
+    background: transparent;
+    color: #6c7689;
+    border: 0;
+    padding: 0;
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+    border-radius: 4px;
+    height: 26px;
+    width: 26px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 120ms ease, color 120ms ease;
+  }
+  .view-source-close:hover {
+    background: #2a2c39;
+    color: #c8ccd4;
+  }
+
+  .view-source-body {
+    flex: 1 1 auto;
+    overflow: auto;
+    padding: 14px 0;
+    background: #1e1f29;
+  }
+
+  .view-source-line {
+    display: flex;
+    gap: 18px;
+    padding: 0 18px;
+    white-space: pre;
+  }
+
+  .view-source-num {
+    color: #4a4c5e;
+    user-select: none;
+    text-align: right;
+    width: 1.8em;
+    flex-shrink: 0;
+  }
+
+  .view-source-code {
+    color: #c8ccd4;
+  }
+
+  /* Token colors. Dracula-leaning palette — chosen so comments mute into the
+     background while keywords and strings pop. JSX tags get the salmon red so
+     `<HireMe />` reads as a component, not text. */
+  .vs-c { color: #6c7689; font-style: italic; }
+  .vs-k { color: #c678dd; }
+  .vs-s { color: #98c379; }
+  .vs-t { color: #e06c75; }
+  .vs-a { color: #d19a66; }
+  .vs-f { color: #61afef; }
+
+  .view-source-footer {
+    padding: 8px 14px;
+    font-size: 11px;
+    color: #6c7689;
+    background: #181922;
+    border-top: 1px solid #2a2c39;
+    display: flex;
+    justify-content: space-between;
+    letter-spacing: 0.04em;
+  }
+
+  @media (max-width: 520px) {
+    .view-source-backdrop {
+      padding: 12px;
+    }
+    .view-source-modal {
+      font-size: 12px;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .view-source-backdrop,
+    .view-source-modal {
+      animation: none;
+    }
+  }
+
+  /* ---------- /View Source easter egg ---------- */
 }
