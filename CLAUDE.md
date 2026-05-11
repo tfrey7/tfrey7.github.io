@@ -39,6 +39,8 @@ Every avatar animation slots into one of three parts:
 
 Arrivals and departures are **shared, randomized libraries** — at runtime, pick a random arrival when Tim appears and (optionally) a random departure when he leaves. Cores are interaction-specific and named after the gag.
 
+**Spawn point is per-interaction.** Sometimes Tim should appear at the clicked element; sometimes he should appear elsewhere (e.g. off-screen left of the section he's about to sweep across). Don't assume click-position — each Easter egg decides where its arrival lands.
+
 **Seam contract.** Every segment hits the Original standing pose at the seams so any arrival can chain into any core into any departure without a visible pop:
 - Arrivals: any first frame, **last frame locked to Original**.
 - Cores: **first frame locked to Original**, **last frame locked to Original**.

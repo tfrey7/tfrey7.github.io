@@ -27,3 +27,9 @@ pnpm-debug.log*
 
 # macOS
 .DS_Store
+
+# local Playwright MCP runs
+.playwright-mcp/
+
+# stray screenshots at repo root (real assets live in public/ or references/)
+/*.png

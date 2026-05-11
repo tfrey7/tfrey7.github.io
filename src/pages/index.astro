@@ -36,7 +36,7 @@ import { contact, skills, experience, education } from '../data/profile';
               </span>{' '}
               {group.items.flatMap((item, i) => [
                 <span class="skill-item">{item}</span>,
-                i < group.items.length - 1 ? <span>, </span> : null,
+                i < group.items.length - 1 ? <span class="skill-sep">, </span> : null,
               ])}
             </li>
           ))
@@ -94,8 +94,13 @@ import { contact, skills, experience, education } from '../data/profile';
             )}
             {role.company === 'Greenhouse Software' && (
               <>
+                <div class="greenhouse-supercomputer" aria-hidden="true">
+                  {/* CRT screen overlay — covers the painted "g" while a
+                      scorecard rating flashes through. SVG injected by JS
+                      (runScorecardFlash in greenhouse-cascade.ts). */}
+                  <div class="greenhouse-screen" aria-hidden="true"></div>
+                </div>
                 <div class="greenhouse-avatar" aria-hidden="true" />
-                <div class="greenhouse-pile" aria-hidden="true" />
               </>
             )}
           </article>
@@ -119,10 +124,12 @@ import { contact, skills, experience, education } from '../data/profile';
   import { initRoleCycle } from '../scripts/role-cycle';
   import { initGreenhouseCascade } from '../scripts/greenhouse-cascade';
   import { initTimeWarp } from '../scripts/time-warp';
+  import { initHint } from '../scripts/hint';
 
   initSkillsCascade();
   initNameReveal();
   initRoleCycle();
   initGreenhouseCascade();
   initTimeWarp();
+  initHint();
 </script>

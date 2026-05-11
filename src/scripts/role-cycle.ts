@@ -23,12 +23,42 @@ const HAT_HOLD_MS = 150;
 const HAT_FINAL_HOLD_MS = 240;
 const HATS_PER_CYCLE = 6;
 
-const HAT_SPRITES = ['construction', 'cowboy', 'mining', 'baseball', 'fireman'];
+const HAT_SPRITES = [
+  'construction',
+  'cowboy',
+  'mining',
+  'baseball',
+  'fireman',
+  'police',
+  'pilot',
+  'astronaut',
+  'welder',
+  'chef',
+  'graduate',
+  'surgeon',
+  'detective',
+  'sailor',
+  'soldier',
+  'fastfood',
+  'mascot',
+  'propeller',
+  'wizard',
+  'tophat',
+  'crown',
+  'jester',
+  'pirate',
+  'conductor',
+  'beret',
+];
+const HATS_PER_BURST = 8;
 const HAT_BURST_STAGGER_MS = 70;
 const HAT_SIZE_PX = 56;
 const HAT_GRAVITY = 1400;
 const HAT_RESTITUTION = 0.55;
 const HAT_ROT_BOUNCE_DAMP = 0.7;
+// Slow-mo factor on physics dt — keeps arc shape identical, just plays back
+// slower so the eye can read each hat.
+const HAT_TIME_SCALE = 0.7;
 
 function pickHats(n: number): string[] {
   const pool = HATS.slice();
@@ -108,7 +138,7 @@ function ensureHatPhysics() {
 }
 
 function hatPhysicsTick(now: number) {
-  const dt = Math.min((now - hatPhysicsLastTime) / 1000, 1 / 30);
+  const dt = Math.min((now - hatPhysicsLastTime) / 1000, 1 / 30) * HAT_TIME_SCALE;
   hatPhysicsLastTime = now;
 
   const W = window.innerWidth;
@@ -161,7 +191,11 @@ function hatPhysicsTick(now: number) {
 
 function spawnHatBurst(host: HTMLElement, timers: number[]) {
   if (prefersReducedMotion()) return;
-  const order = HAT_SPRITES.slice().sort(() => Math.random() - 0.5);
+  // Pick a random subset each click so 15 hats don't all fly at once and
+  // each burst feels fresh.
+  const order = HAT_SPRITES.slice()
+    .sort(() => Math.random() - 0.5)
+    .slice(0, HATS_PER_BURST);
   order.forEach((sprite, i) => {
     if (i === 0) {
       spawnHat(host, sprite);

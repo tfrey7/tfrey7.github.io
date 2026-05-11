@@ -7,13 +7,13 @@ import {
   pickRandom,
 } from './avatar';
 
-type Direction = 'left' | 'right';
-
-const SETTLE_MS = 1200;
+// How long after the last item launches before the avatar arrives. Tuned so
+// the avatar's arrival animation (~1.1s) overlaps the last items' bounce-and-
+// settle window, so everything is on the floor by hammer-time.
+const SETTLE_AFTER_LAST_LAUNCH_MS = 850;
 // Fractions of the core's duration when the hammer hits the ground. Tuned
 // to the hammer-fix sheet: hammer descends to the floor around frame ~13
-// (52%) and a follow-up beat around frame ~18 (72%). Tweak after watching
-// the animation if the snap-back doesn't land on the visual impact.
+// (52%) and a follow-up beat around frame ~18 (72%).
 const HAMMER_IMPACT_FRACTIONS = [0.52, 0.72] as const;
 
 const CORE_HAMMER_FIX: AvatarAnim = {
@@ -21,12 +21,47 @@ const CORE_HAMMER_FIX: AvatarAnim = {
   durationMs: 1500,
 };
 
-// Beat after the arrival lands before the hammer-fix kicks off — gives
-// the audience a moment to register that he's arrived.
+// Beat after arrival lands before the hammer-fix kicks off.
 const ARRIVAL_TO_REPAIR_MS = 200;
-// Pause between core's last frame and the exit kicking off — long enough
-// for the held standing pose to register before he leaves.
+// Pause between core's last frame and the exit kicking off.
 const CORE_TO_EXIT_HOLD_MS = 320;
+
+// Physics tuning.
+const GRAVITY = 2400;
+const RESTITUTION_FLOOR = 0.5;
+const RESTITUTION_WALL = 0.62;
+const FLOOR_FRICTION = 0.78;
+const SETTLE_SPEED = 40;
+const FLOOR_GAP = 4;
+
+// Boink budget — first floor impacts play a boink, capped + rate-limited
+// so a 20-item cascade doesn't turn into a noise wall.
+const BOINK_COOLDOWN_MS = 55;
+const BOINK_MAX = 24;
+
+type Body = {
+  el: HTMLElement;
+  // Rest position (viewport coords of element center, captured at launch).
+  restX: number;
+  restY: number;
+  // Live viewport coords of the element center.
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  angle: number;
+  spin: number;
+  // Half extents for wall/floor collision.
+  hw: number;
+  hh: number;
+  // Bodies are pre-created at rest. The wave scheduler flips `launched` later
+  // — only launched bodies are physics-active. This drives the domino: the
+  // first item flips early, neighbors flip on a delay, and panic spreads out.
+  launched: boolean;
+  settled: boolean;
+  hasImpacted: boolean;
+  returning: boolean;
+};
 
 type Spark = {
   el: HTMLElement;
@@ -45,246 +80,139 @@ export function initSkillsCascade() {
 
   const avatar = createAvatarController(skillsAvatar);
 
-  let fixTimer: number | null = null;
   let cascading = false;
+  let bodies: Body[] = [];
+  let fixTimer: number | null = null;
 
-  const activeSparks: Spark[] = [];
   let physicsFrame: number | null = null;
   let physicsLastTime = 0;
+  const activeSparks: Spark[] = [];
 
-  function fall(el: HTMLElement, direction: Direction, delay: number, intensity: number) {
-    // Roll a tip angle first; if it exceeds the tipping point, gravity wins and
-    // the item falls all the way off rather than hanging at a weird steep angle.
-    const tipAngle = 22 + Math.random() * 78;
-    const TIPPING_POINT = 62;
-    const fallsOff = Math.random() < 0.22 || tipAngle > TIPPING_POINT;
-
-    if (fallsOff) {
-      // Spins off the section: heavy rotation + translate past the viewport
-      // bottom so the item is fully off-screen by the time cleanup snaps it back.
-      const sideBias = direction === 'right' ? 1 : -1;
-      const spinSign = Math.random() < 0.6 ? sideBias : -sideBias;
-      const spinMagnitude = 220 + Math.random() * 540;
-      const fallX = sideBias * Math.random() * 180;
-      const rect = el.getBoundingClientRect();
-      const distanceToBottom = Math.max(0, window.innerHeight - rect.bottom);
-      const fallY = distanceToBottom + 140 + Math.random() * 220;
-      const duration = 0.75 + Math.random() * 0.4;
-
-      el.style.setProperty('--fall-angle', `${spinSign * spinMagnitude}deg`);
-      el.style.setProperty('--fall-x', `${fallX}px`);
-      el.style.setProperty('--fall-y', `${fallY}px`);
-      el.style.setProperty('--fall-duration', `${duration}s`);
-      el.classList.add('is-falling-off');
-    } else {
-      const signed = direction === 'right' ? tipAngle : -tipAngle;
-      const slide = Math.random() < 0.4 ? (Math.random() - 0.5) * 16 : 0;
-      const duration = 0.32 + Math.random() * 0.4;
-
-      el.style.setProperty('--fall-angle', `${signed}deg`);
-      el.style.setProperty('--fall-origin', direction === 'right' ? '0% 100%' : '100% 100%');
-      el.style.setProperty('--fall-duration', `${duration}s`);
-      if (slide !== 0) el.style.setProperty('--fall-x', `${slide}px`);
-    }
-
-    window.setTimeout(() => {
-      if (el.classList.contains('is-fallen')) return;
-      el.classList.add('is-fallen');
-      playBoink(intensity);
-      scheduleFix();
-    }, delay);
-  }
+  let lastBoinkAt = 0;
+  let boinkCount = 0;
 
   function startCascade(clickX: number, clickY: number) {
     if (!stage || cascading || stage.classList.contains('is-fixing')) return;
     cascading = true;
+    stage.classList.add('is-cascading');
     avatar.reset();
+    boinkCount = 0;
+    lastBoinkAt = 0;
 
     const items = Array.from(stage.querySelectorAll<HTMLElement>('.skill-item'));
 
-    // Rank items by distance from click — nearest will fall first.
+    // Rank by distance from click — the nearest item goes first, panic
+    // spreads outward from there.
     const ranked = items
       .map((el) => {
         const r = el.getBoundingClientRect();
         const cx = (r.left + r.right) / 2;
         const cy = (r.top + r.bottom) / 2;
-        const dx = cx - clickX;
-        const dy = cy - clickY;
         return {
           el,
-          dist: Math.sqrt(dx * dx + dy * dy),
-          direction: (dx >= 0 ? 'right' : 'left') as Direction,
+          restX: cx,
+          restY: cy,
+          hw: r.width / 2,
+          hh: r.height / 2,
+          dist: Math.hypot(cx - clickX, cy - clickY),
         };
       })
       .sort((a, b) => a.dist - b.dist);
 
-    // Spreading-panic pacing: 1 falls, beat, another, then 2, 3, 5, then domino.
-    // Intensity rises with each wave so the boinks build from soft to crashing.
+    // Pre-create resting bodies for every item. They sit at rest (launched =
+    // false) until the wave scheduler flips them. Pre-creation keeps the
+    // bodies array in sync with the items list, so scheduleRepair can fly
+    // every item home even if the user somehow cuts the cascade short.
+    bodies = ranked.map((r) => ({
+      el: r.el,
+      restX: r.restX,
+      restY: r.restY,
+      x: r.restX,
+      y: r.restY,
+      vx: 0,
+      vy: 0,
+      angle: 0,
+      spin: 0,
+      hw: r.hw,
+      hh: r.hh,
+      launched: false,
+      settled: false,
+      hasImpacted: false,
+      returning: false,
+    }));
+
+    // Spreading-panic pacing: 1 → 1 → 2 → 3 → 5 → domino through the rest.
+    // Intensity ramps each wave so early items "tip" (low impulse, gentle
+    // spin) while later items erupt. Boink loudness scales with impact speed
+    // downstream, so the audio rises with the visual chaos automatically.
     const waveSizes = [1, 1, 2, 3, 5];
     const waveDelays = [0, 320, 540, 700, 830];
-    const waveIntensity = [0.05, 0.18, 0.32, 0.5, 0.7];
+    const waveIntensity = [0.18, 0.32, 0.5, 0.72, 0.88];
     const FINAL_BASE = 950;
     const FINAL_STAGGER = 45;
 
     let cursor = 0;
+    let lastLaunchAt = 0;
+
     waveSizes.forEach((size, w) => {
-      for (let j = 0; j < size && cursor < ranked.length; j++, cursor++) {
-        const { el, direction } = ranked[cursor];
-        fall(el, direction, waveDelays[w] + Math.random() * 50, waveIntensity[w]);
+      for (let j = 0; j < size && cursor < bodies.length; j++, cursor++) {
+        const body = bodies[cursor];
+        const intensity = waveIntensity[w];
+        const delay = waveDelays[w] + Math.random() * 50;
+        window.setTimeout(() => launchBody(body, clickX, clickY, intensity), delay);
+        if (delay > lastLaunchAt) lastLaunchAt = delay;
       }
     });
 
-    const remaining = ranked.length - cursor;
+    // Domino tail: remaining items launch in left-to-right(ish) order with a
+    // tight stagger, climbing intensity 0.92 → 1.0 across the run.
+    const remaining = bodies.length - cursor;
     let extra = 0;
-    while (cursor < ranked.length) {
-      const { el, direction } = ranked[cursor];
-      // Final domino climbs from 0.85 → 1.0 across its items.
-      const finalIntensity = 0.85 + (remaining > 1 ? (extra / (remaining - 1)) * 0.15 : 0);
-      fall(el, direction, FINAL_BASE + extra * FINAL_STAGGER + Math.random() * 35, finalIntensity);
+    while (cursor < bodies.length) {
+      const body = bodies[cursor];
+      const finalIntensity = 0.92 + (remaining > 1 ? (extra / (remaining - 1)) * 0.08 : 0);
+      const delay = FINAL_BASE + extra * FINAL_STAGGER + Math.random() * 35;
+      window.setTimeout(() => launchBody(body, clickX, clickY, finalIntensity), delay);
+      if (delay > lastLaunchAt) lastLaunchAt = delay;
       cursor++;
       extra++;
     }
-  }
 
-  function scheduleFix() {
     if (fixTimer !== null) window.clearTimeout(fixTimer);
-    fixTimer = window.setTimeout(runFix, SETTLE_MS);
+    fixTimer = window.setTimeout(runFix, lastLaunchAt + SETTLE_AFTER_LAST_LAUNCH_MS);
   }
 
-  // Returns the viewport + stage-percent coordinates of the hammer's strike
-  // point: roughly in front of the avatar's right foot. Sampled at impact time
-  // (not pre-computed) so layout shifts between schedule and fire don't drift it.
-  function computeHammerImpactPoint() {
-    if (!stage || !skillsAvatar) return null;
-    const avatarRect = skillsAvatar.getBoundingClientRect();
-    const stageRect = stage.getBoundingClientRect();
-    const viewportX = avatarRect.left + avatarRect.width * 0.78;
-    const viewportY = avatarRect.bottom - 12;
-    return {
-      viewportX,
-      viewportY,
-      stagePctX: ((viewportX - stageRect.left) / stageRect.width) * 100,
-      stagePctY: ((viewportY - stageRect.top) / stageRect.height) * 100,
-    };
-  }
+  // Flip a resting body into the physics simulation. Tuned as a tip-and-fall:
+  // a small sideways nudge away from the click + tumble, then gravity does the
+  // real work. Intensity scales the nudge so panic still spreads outward, but
+  // even the strongest wave shouldn't read as an eruption — items lose their
+  // footing and drop.
+  function launchBody(body: Body, clickX: number, clickY: number, intensity: number) {
+    if (body.launched || body.returning) return;
 
-  // Drives the visible repair: each hammer impact snaps back a portion of the
-  // pile, plays a thunk, and erupts sparks/puffs at the strike point. Fallen
-  // items are partitioned left-to-right so the hammer reads as working its way
-  // across the pile rather than fixing everything at once.
-  function scheduleRepair(
-    startMs: number,
-    fallen: NodeListOf<HTMLElement>,
-    coreDurationMs: number,
-  ) {
-    if (!stage) return;
+    const dx = body.restX - clickX;
+    const dy = body.restY - clickY;
+    const dist = Math.max(20, Math.hypot(dx, dy));
+    const ux = dx / dist;
+    const uy = dy / dist;
 
-    const sortedByX = Array.from(fallen)
-      .map((el) => ({ el, x: el.getBoundingClientRect().left }))
-      .sort((a, b) => a.x - b.x)
-      .map((p) => p.el);
-    const half = Math.ceil(sortedByX.length / HAMMER_IMPACT_FRACTIONS.length);
-    const waves: HTMLElement[][] = HAMMER_IMPACT_FRACTIONS.map((_, i) =>
-      sortedByX.slice(i * half, (i + 1) * half),
-    );
+    const radial = intensity * 180;
+    // Tiny upward bias so items clear their own baseline before falling — keeps
+    // them from instantly clipping into the floor on a cold start.
+    const lift = 20 + intensity * 50;
+    const jitter = 30 + intensity * 70;
 
-    window.setTimeout(() => {
-      if (!stage) return;
-      stage.classList.add('is-fixing');
-    }, startMs);
+    body.vx = ux * radial + (Math.random() - 0.5) * jitter;
+    // uy term kept very small — we don't want items above the click to launch
+    // upward. Vertical motion is dominated by gravity, not impulse.
+    body.vy = uy * radial * 0.1 - lift;
+    body.spin = (Math.random() - 0.5) * (180 + intensity * 520);
+    body.launched = true;
 
-    HAMMER_IMPACT_FRACTIONS.forEach((frac, i) => {
-      const wave = waves[i] ?? [];
-      window.setTimeout(() => {
-        if (!stage) return;
-        const impact = computeHammerImpactPoint();
-        playThunk();
-        if (impact) {
-          spawnSparks(impact.viewportX, impact.viewportY, 14);
-          spawnPuffs(stage, impact.stagePctX, impact.stagePctY, 11);
-        }
-        wave.forEach((el) => {
-          el.style.transition = 'none';
-          el.classList.remove('is-fallen', 'is-falling-off');
-          el.style.removeProperty('--fall-angle');
-          el.style.removeProperty('--fall-origin');
-          el.style.removeProperty('--fall-x');
-          el.style.removeProperty('--fall-y');
-          el.style.removeProperty('--fall-duration');
-          void el.offsetHeight;
-          el.style.transition = '';
-        });
-      }, startMs + frac * coreDurationMs);
-    });
+    body.el.style.transition = 'none';
+    body.el.classList.add('is-flying');
 
-    window.setTimeout(() => {
-      if (!stage) return;
-      stage.classList.remove('is-fixing');
-      cascading = false;
-    }, startMs + coreDurationMs);
-  }
-
-  function runFix() {
-    fixTimer = null;
-    if (!stage) return;
-    const fallen = stage.querySelectorAll<HTMLElement>('.skill-item.is-fallen');
-    if (fallen.length === 0) {
-      cascading = false;
-      return;
-    }
-
-    avatar.reset();
-
-    const arrival = pickRandom(ARRIVALS);
-    const exit = pickRandom(EXITS);
-    const core = CORE_HAMMER_FIX;
-
-    // Serial timeline: arrival → core (the visible fix) → exit. The hammer's
-    // impact frames inside the core duration drive the snap-back; see
-    // scheduleRepair.
-    const T_CORE_START = arrival.durationMs + ARRIVAL_TO_REPAIR_MS;
-    const T_CORE_END = T_CORE_START + core.durationMs;
-    const T_EXIT_START = T_CORE_END + CORE_TO_EXIT_HOLD_MS;
-
-    avatar.startArrival(arrival);
-    avatar.scheduleCore(core, T_CORE_START);
-    avatar.scheduleExit(exit, T_EXIT_START);
-
-    scheduleRepair(T_CORE_START, fallen, core.durationMs);
-  }
-
-  function spawnSparks(centerX: number, centerY: number, count: number) {
-    // Sparks live in document.body (position: fixed) so they can fly anywhere
-    // on screen and bounce off the viewport edges, settling along the bottom of
-    // the window. Caller supplies the impact point in viewport coords.
-    for (let i = 0; i < count; i++) {
-      window.setTimeout(() => {
-        const side: -1 | 1 = Math.random() < 0.5 ? -1 : 1;
-        const x = centerX + side * Math.random() * 4;
-        const y = centerY + (Math.random() - 0.5) * 6;
-
-        // Bias velocity outward+up — at viewport scale they need horizontal
-        // momentum to ricochet across the screen, not just shoot straight up.
-        const speed = 480 + Math.random() * 720;
-        const angleDeg = 10 + Math.random() * 60;
-        const angleRad = (angleDeg * Math.PI) / 180;
-        const vx = side * Math.cos(angleRad) * speed;
-        const vy = -Math.sin(angleRad) * speed;
-
-        const size = 2 + Math.random() * 3;
-        const maxLife = 1.4 + Math.random() * 1.0;
-
-        const el = document.createElement('div');
-        el.className = 'skills-spark';
-        el.style.setProperty('--spark-size', `${size}px`);
-        el.style.transform = `translate(${x}px, ${y}px) translate(-50%, -50%)`;
-        el.style.opacity = '1';
-        document.body.appendChild(el);
-
-        activeSparks.push({ el, x, y, vx, vy, life: maxLife, maxLife });
-        ensurePhysicsLoop();
-      }, Math.random() * 60);
-    }
+    ensurePhysicsLoop();
   }
 
   function ensurePhysicsLoop() {
@@ -299,14 +227,71 @@ export function initSkillsCascade() {
 
     const W = window.innerWidth;
     const H = window.innerHeight;
-    const GRAVITY = 2400;
+
+    let bodyWork = false;
+    for (const b of bodies) {
+      if (!b.launched || b.returning) continue;
+      if (!b.settled) {
+        bodyWork = true;
+        b.vy += GRAVITY * dt;
+        b.x += b.vx * dt;
+        b.y += b.vy * dt;
+        b.angle += b.spin * dt;
+
+        const floorY = H - b.hh - FLOOR_GAP;
+        if (b.y >= floorY) {
+          const impactSpeed = Math.abs(b.vy);
+          b.y = floorY;
+          b.vy = -b.vy * RESTITUTION_FLOOR;
+          b.vx *= FLOOR_FRICTION;
+          b.spin *= FLOOR_FRICTION;
+          if (!b.hasImpacted && impactSpeed > 220) {
+            b.hasImpacted = true;
+            maybeBoink(impactSpeed);
+          }
+          if (Math.abs(b.vy) < SETTLE_SPEED && Math.abs(b.vx) < SETTLE_SPEED) {
+            b.settled = true;
+            b.vx = 0;
+            b.vy = 0;
+            b.spin = 0;
+          }
+        }
+        if (b.x - b.hw < 0) {
+          b.x = b.hw;
+          b.vx = -b.vx * RESTITUTION_WALL;
+          b.spin *= 0.85;
+        }
+        if (b.x + b.hw > W) {
+          b.x = W - b.hw;
+          b.vx = -b.vx * RESTITUTION_WALL;
+          b.spin *= 0.85;
+        }
+
+        const dx = b.x - b.restX;
+        const dy = b.y - b.restY;
+        b.el.style.transform = `translate(${dx}px, ${dy}px) rotate(${b.angle}deg)`;
+      }
+    }
+
+    // Sparks share the same loop — saves a second rAF callback.
+    if (activeSparks.length > 0) {
+      tickSparks(dt, W, H);
+    }
+
+    if (bodyWork || activeSparks.length > 0) {
+      physicsFrame = requestAnimationFrame(physicsTick);
+    } else {
+      physicsFrame = null;
+    }
+  }
+
+  function tickSparks(dt: number, W: number, H: number) {
+    const GRAV = 2400;
     const RESTITUTION = 0.5;
     const FRICTION = 0.84;
-
     for (let i = activeSparks.length - 1; i >= 0; i--) {
       const s = activeSparks[i];
-
-      s.vy += GRAVITY * dt;
+      s.vy += GRAV * dt;
       s.x += s.vx * dt;
       s.y += s.vy * dt;
 
@@ -342,17 +327,143 @@ export function initSkillsCascade() {
         activeSparks.splice(i, 1);
       }
     }
+  }
 
-    if (activeSparks.length > 0) {
-      physicsFrame = requestAnimationFrame(physicsTick);
-    } else {
-      physicsFrame = null;
+  function maybeBoink(impactSpeed: number) {
+    const now = performance.now();
+    if (now - lastBoinkAt < BOINK_COOLDOWN_MS) return;
+    if (boinkCount >= BOINK_MAX) return;
+    lastBoinkAt = now;
+    boinkCount++;
+    const intensity = Math.min(1, impactSpeed / 1400);
+    playBoink(intensity);
+  }
+
+  // Viewport + stage-percent coords of the hammer strike point, ~in front of
+  // the avatar's right foot. Sampled per-impact so layout shifts between
+  // schedule and fire don't drift it.
+  function computeHammerImpactPoint() {
+    if (!stage || !skillsAvatar) return null;
+    const avatarRect = skillsAvatar.getBoundingClientRect();
+    const stageRect = stage.getBoundingClientRect();
+    const viewportX = avatarRect.left + avatarRect.width * 0.78;
+    const viewportY = avatarRect.bottom - 12;
+    return {
+      viewportX,
+      viewportY,
+      stagePctX: ((viewportX - stageRect.left) / stageRect.width) * 100,
+      stagePctY: ((viewportY - stageRect.top) / stageRect.height) * 100,
+    };
+  }
+
+  function runFix() {
+    fixTimer = null;
+    if (!stage) return;
+    if (bodies.length === 0) {
+      cascading = false;
+      return;
+    }
+
+    avatar.reset();
+
+    const arrival = pickRandom(ARRIVALS);
+    const exit = pickRandom(EXITS);
+    const core = CORE_HAMMER_FIX;
+
+    const T_CORE_START = arrival.durationMs + ARRIVAL_TO_REPAIR_MS;
+    const T_CORE_END = T_CORE_START + core.durationMs;
+    const T_EXIT_START = T_CORE_END + CORE_TO_EXIT_HOLD_MS;
+
+    avatar.startArrival(arrival);
+    avatar.scheduleCore(core, T_CORE_START);
+    avatar.scheduleExit(exit, T_EXIT_START);
+
+    scheduleRepair(T_CORE_START, core.durationMs);
+  }
+
+  // Each hammer impact frame: a wave of bodies fly home from wherever they
+  // currently rest. Items are partitioned left-to-right by their *current*
+  // x so the hammer reads as working its way across the pile.
+  function scheduleRepair(startMs: number, coreDurationMs: number) {
+    if (!stage) return;
+
+    const sorted = [...bodies].sort((a, b) => a.x - b.x);
+    const chunk = Math.ceil(sorted.length / HAMMER_IMPACT_FRACTIONS.length);
+    const waves: Body[][] = HAMMER_IMPACT_FRACTIONS.map((_, i) =>
+      sorted.slice(i * chunk, (i + 1) * chunk),
+    );
+
+    window.setTimeout(() => {
+      if (!stage) return;
+      stage.classList.add('is-fixing');
+    }, startMs);
+
+    HAMMER_IMPACT_FRACTIONS.forEach((frac, i) => {
+      const wave = waves[i] ?? [];
+      window.setTimeout(() => {
+        if (!stage) return;
+        const impact = computeHammerImpactPoint();
+        playThunk();
+        if (impact) {
+          spawnSparks(impact.viewportX, impact.viewportY, 14);
+          spawnPuffs(stage, impact.stagePctX, impact.stagePctY, 11);
+        }
+        wave.forEach((b) => {
+          b.returning = true;
+          b.settled = true;
+          // Hand off from per-frame inline transform to a single CSS
+          // transition back to identity — the item flies home on a smooth
+          // arc set by the cubic-bezier below.
+          b.el.style.transition = 'transform 0.55s cubic-bezier(0.34, 1.18, 0.64, 1)';
+          b.el.style.transform = 'translate(0, 0) rotate(0deg)';
+          window.setTimeout(() => {
+            b.el.classList.remove('is-flying');
+            b.el.style.transition = '';
+            b.el.style.transform = '';
+          }, 620);
+        });
+      }, startMs + frac * coreDurationMs);
+    });
+
+    window.setTimeout(() => {
+      if (!stage) return;
+      stage.classList.remove('is-fixing');
+      stage.classList.remove('is-cascading');
+      cascading = false;
+      bodies = [];
+    }, startMs + coreDurationMs);
+  }
+
+  function spawnSparks(centerX: number, centerY: number, count: number) {
+    for (let i = 0; i < count; i++) {
+      window.setTimeout(() => {
+        const side: -1 | 1 = Math.random() < 0.5 ? -1 : 1;
+        const x = centerX + side * Math.random() * 4;
+        const y = centerY + (Math.random() - 0.5) * 6;
+
+        const speed = 480 + Math.random() * 720;
+        const angleDeg = 10 + Math.random() * 60;
+        const angleRad = (angleDeg * Math.PI) / 180;
+        const vx = side * Math.cos(angleRad) * speed;
+        const vy = -Math.sin(angleRad) * speed;
+
+        const size = 2 + Math.random() * 3;
+        const maxLife = 1.4 + Math.random() * 1.0;
+
+        const el = document.createElement('div');
+        el.className = 'skills-spark';
+        el.style.setProperty('--spark-size', `${size}px`);
+        el.style.transform = `translate(${x}px, ${y}px) translate(-50%, -50%)`;
+        el.style.opacity = '1';
+        document.body.appendChild(el);
+
+        activeSparks.push({ el, x, y, vx, vy, life: maxLife, maxLife });
+        ensurePhysicsLoop();
+      }, Math.random() * 60);
     }
   }
 
   function spawnPuffs(stageEl: HTMLElement, leftPct: number, topPct: number, count: number) {
-    // Front-loaded eruption around the supplied stage-percent point: most puffs
-    // in the first ~180ms, the rest trail off.
     const burstCount = Math.ceil(count * 0.65);
     for (let i = 0; i < count; i++) {
       const inBurst = i < burstCount;
@@ -362,7 +473,6 @@ export function initSkillsCascade() {
 
       window.setTimeout(() => {
         const isBack = i % 2 === 0;
-        // Bias position around the impact; back puffs spread a touch wider.
         const sideRoll = Math.random();
         const side: -1 | 1 = sideRoll < 0.5 ? -1 : 1;
         const horizontalSpread = isBack ? 8 : 5;
@@ -377,7 +487,6 @@ export function initSkillsCascade() {
         const size = isBack
           ? 56 + Math.random() * 60
           : 30 + Math.random() * 40;
-        // Drift outward from impact (away from center) and upward.
         const driftX = side * (20 + Math.random() * 70);
         const driftY = -(40 + Math.random() * 60);
         const rotate = side * (10 + Math.random() * 50);

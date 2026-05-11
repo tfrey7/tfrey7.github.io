@@ -1,6 +1,6 @@
 import { playAngelicChime, resumeAudio } from './audio';
 
-// Name click → avatar pops in next to the name and gives a peace sign.
+// Name click → avatar pops in next to the name and gives a thumbs-up + wink.
 // Total animation = 2s play + 1s hold/fade.
 const NAME_AVATAR_TOTAL_MS = 3000;
 

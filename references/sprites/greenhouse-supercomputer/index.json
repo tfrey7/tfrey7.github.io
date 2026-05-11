@@ -1,0 +1,27 @@
+{
+  "type": "asset",
+  "assetId": "cmp1akgvn0015hgatqwkfq9bw",
+  "assetName": "Greenhouse Supercomputer",
+  "baseImage": "/sprites/greenhouse-supercomputer.png",
+  "baseImageSource": "references/greenhouse-supercomputer.png (gpt-image-1 via generate-image)",
+  "spritesheets": {
+    "idle": {
+      "spritesheetId": "cmp1aobk9001o6uw9sxomjls6",
+      "kind": "animate_asset",
+      "isLooping": true,
+      "quality": "legendary",
+      "frameSize": 384,
+      "frameCount": 25,
+      "columns": 5,
+      "rows": 5,
+      "sheetSize": [1920, 1920],
+      "removeBg": "ultra",
+      "animationPrompt": "Idle. Machine body stays 100% still. Only the colored LEDs animate: top bezel dots flicker, button grid pulses, sidecar amber bar pulses. Screen logo steady. No chassis motion.",
+      "note": "AutoSprite interpreted the prompt loosely: chassis silhouette stays still as requested, but the screen 'g' cycles through diagnostic colors (mint → cyan → orange/green → amber/yellow) — asset model treats the salient subject as the animation target. Per generate-spritesheet skill, asset animation has no first-frame-lock so this drift is structural. Kept for now; iterate later if the brand-color drift is a problem.",
+      "files": {
+        "sheet": "supercomputer-idle.png",
+        "atlas": "supercomputer-idle.atlas.json"
+      }
+    }
+  }
+}

@@ -7,7 +7,15 @@
 // All sprites are 5x5 grids of 256px frames — JS just sets the URL and
 // duration, the CSS phase classes handle the rest.
 
-export type AvatarAnim = { sprite: string; durationMs: number };
+export type AvatarAnim = {
+  sprite: string;
+  // Duration of a single play of the 5x5 grid.
+  durationMs: number;
+  // Number of times the sprite repeats end-to-end. Default 1. Use >1 for
+  // cores where the gesture needs to keep going while something else (e.g.
+  // a JS-driven translate) plays out at a different tempo.
+  cycles?: number;
+};
 
 export const ARRIVALS: AvatarAnim[] = [
   { sprite: '/sprites/tim/arrivals/somersault.png', durationMs: 1100 },
@@ -35,9 +43,11 @@ const PHASE_CLASSES = [
   'is-fading',
 ];
 
+export type Facing = 'left' | 'right';
+
 // Final fade after the exit sprite finishes (covers any sprites that don't
 // fully fade themselves out of frame).
-const AVATAR_FADE_MS = 280;
+export const AVATAR_FADE_MS = 280;
 
 export function pickRandom<T>(pool: T[]): T {
   return pool[Math.floor(Math.random() * pool.length)];
@@ -45,6 +55,7 @@ export function pickRandom<T>(pool: T[]): T {
 
 export type AvatarController = {
   reset(): void;
+  setFacing(facing: Facing): void;
   startArrival(arrival: AvatarAnim): void;
   scheduleCore(core: AvatarAnim, startMs: number): void;
   scheduleExit(exit: AvatarAnim, startMs: number): void;
@@ -64,9 +75,17 @@ export function createAvatarController(el: HTMLElement): AvatarController {
   function reset() {
     clearTimers();
     el.classList.remove(...PHASE_CLASSES);
+    el.classList.remove('is-facing-left');
     el.style.removeProperty('--sprite-url');
     el.style.removeProperty('--anim-duration');
     el.style.removeProperty('--anim-row-duration');
+  }
+
+  // Mirrors the whole appearance horizontally. Apply BEFORE startArrival so
+  // arrival/core/exit all share the orientation — flipping mid-sequence would
+  // pop visibly at the seam.
+  function setFacing(facing: Facing) {
+    el.classList.toggle('is-facing-left', facing === 'left');
   }
 
   function setPhase(phaseClass: string) {
@@ -77,9 +96,17 @@ export function createAvatarController(el: HTMLElement): AvatarController {
   }
 
   function loadAnim(anim: AvatarAnim) {
+    const cycles = anim.cycles ?? 1;
     el.style.setProperty('--sprite-url', `url('${anim.sprite}')`);
     el.style.setProperty('--anim-duration', `${anim.durationMs}ms`);
     el.style.setProperty('--anim-row-duration', `${anim.durationMs / 5}ms`);
+    // Iteration counts for the X (column) and Y (row) sub-animations. X
+    // cycles cols 0→4 once per row (5 per full sprite play); Y cycles rows
+    // 0→4 once per full sprite play. Multiply by `cycles` to repeat the
+    // whole 5×5 grid end-to-end. Default 1 cycle leaves the previous
+    // behavior unchanged.
+    el.style.setProperty('--anim-x-iters', `${5 * cycles}`);
+    el.style.setProperty('--anim-y-iters', `${cycles}`);
   }
 
   function startArrival(arrival: AvatarAnim) {
@@ -91,6 +118,7 @@ export function createAvatarController(el: HTMLElement): AvatarController {
   }
 
   function scheduleCore(core: AvatarAnim, startMs: number) {
+    const totalMs = core.durationMs * (core.cycles ?? 1);
     timers.push(
       window.setTimeout(() => {
         loadAnim(core);
@@ -98,7 +126,7 @@ export function createAvatarController(el: HTMLElement): AvatarController {
       }, startMs)
     );
     timers.push(
-      window.setTimeout(() => setPhase('is-core-held'), startMs + core.durationMs)
+      window.setTimeout(() => setPhase('is-core-held'), startMs + totalMs)
     );
   }
 
@@ -119,5 +147,5 @@ export function createAvatarController(el: HTMLElement): AvatarController {
     );
   }
 
-  return { reset, startArrival, scheduleCore, scheduleExit };
+  return { reset, setFacing, startArrival, scheduleCore, scheduleExit };
 }

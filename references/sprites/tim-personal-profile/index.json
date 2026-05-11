@@ -39,6 +39,24 @@
         "atlas": "backflip-departure.atlas.json"
       }
     },
+    "thumbs-up-wink": {
+      "spritesheetId": "cmp1aaqoe004grwtxici13frp",
+      "slot": "core",
+      "kind": "custom",
+      "direction": "right",
+      "quality": "legendary",
+      "frameWidth": 256,
+      "frameHeight": 256,
+      "frameCount": 25,
+      "columns": 5,
+      "firstFramePoseId": "cmoyxwhrb003mpweo0lws0877",
+      "lastFramePoseId": "cmoyxwhrb003mpweo0lws0877",
+      "note": "Stand → raise right arm into a thumbs-up at chest/shoulder height with left-eye wink and closed-lip smirk → hold → lower arm → stand. Both seams hit Original. Replaces peace-sign as the name-click core for a more heroic-protagonist beat. At 96px display the thumb shape and wink are not crisp — reads as 'confident raised-hand gesture' more than a literal thumbs-up. Regenerate with sharper prompt if a cleaner read is needed.",
+      "files": {
+        "sheet": "thumbs-up-wink.png",
+        "atlas": "thumbs-up-wink.atlas.json"
+      }
+    },
     "peace-sign": {
       "spritesheetId": "cmoz0iktg000e11msxnmlk7yv",
       "slot": "core",
@@ -51,7 +69,7 @@
       "columns": 5,
       "firstFramePoseId": "cmoyxwhrb003mpweo0lws0877",
       "lastFramePoseId": "cmoyxwhrb003mpweo0lws0877",
-      "note": "Stand → raise right arm → hold peace sign → lower arm → stand. Both seams hit Original; chainable into any arrival/departure. Replaces the earlier first-frame-only version. Used by the name-click reveal.",
+      "note": "Stand → raise right arm → hold peace sign → lower arm → stand. Both seams hit Original; chainable into any arrival/departure. Earlier core for the name-click reveal; replaced by thumbs-up-wink. Kept as a chainable alternative.",
       "files": {
         "sheet": "peace-sign-core.png",
         "atlas": "peace-sign-core.atlas.json"
@@ -73,6 +91,42 @@
       "files": {
         "sheet": "hammer-fix.png",
         "atlas": "hammer-fix.atlas.json"
+      }
+    },
+    "broom-sweep": {
+      "spritesheetId": "cmp19xtys0016rwtx6dkiyilx",
+      "slot": "core",
+      "kind": "custom",
+      "direction": "right",
+      "quality": "legendary",
+      "frameWidth": 256,
+      "frameHeight": 256,
+      "frameCount": 25,
+      "columns": 5,
+      "firstFramePoseId": "cmoyxwhrb003mpweo0lws0877",
+      "lastFramePoseId": "cmoyxwhrb003mpweo0lws0877",
+      "note": "Stand → pull wide wooden push-broom from behind back → grip with both hands and lower brush to floor in front → take rhythmic push-strides leaning into broom across frames 5-21 → straighten and stow → return to standing. Both seams hit Original. Used by the Greenhouse cascade: greenhouse-cascade.ts plays this while translating the avatar's `left` from off-screen-left to past-stage-right; landed papers within the broom hitbox (BROOM_HITBOX_LEFT/RIGHT_FRAC of the avatar box) get marked swept and ride the brush off-screen. Mid-cycle frames are slightly inconsistent (a couple look more like 'walking past a planted broom' than active pushing) but the overall walking-while-sweeping read holds.",
+      "files": {
+        "sheet": "broom-sweep.png",
+        "atlas": "broom-sweep.atlas.json"
+      }
+    },
+    "laptop-hack": {
+      "spritesheetId": "cmp18t5ep004uqi1o3xli8hg6",
+      "slot": "core",
+      "kind": "custom",
+      "direction": "right",
+      "quality": "legendary",
+      "frameWidth": 256,
+      "frameHeight": 256,
+      "frameCount": 25,
+      "columns": 5,
+      "firstFramePoseId": "cmoyxwhrb003mpweo0lws0877",
+      "lastFramePoseId": "cmoyxwhrb003mpweo0lws0877",
+      "note": "Stand → pull black hacker-movie laptop (green-on-black terminal screen, lid decals) from behind back → open midair → furious two-hand typing with green code-glow on his face → dramatic Enter-stab at ~frame 13 → satisfied nod → snap laptop shut → tuck behind back → return to standing. Both seams hit Original. Drives the time-warp un-warp — time-warp.ts reads FIX_IMPACT_FRACTION (0.52) to fire the snap-back on the Enter-stab frame.",
+      "files": {
+        "sheet": "laptop-hack.png",
+        "atlas": "laptop-hack.atlas.json"
       }
     },
     "pipe-drop-arrival": {

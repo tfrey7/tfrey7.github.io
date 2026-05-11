@@ -1,4 +1,4 @@
-import { playPaperWhoosh, playPaperPat, playStackTap, resumeAudio } from './audio';
+import { playPaperWhoosh, resumeAudio } from './audio';
 import {
   ARRIVALS,
   EXITS,
@@ -7,112 +7,319 @@ import {
   pickRandom,
 } from './avatar';
 
-// Greenhouse Easter egg. Click "Greenhouse Software" → a chaotic burst of
-// resume papers erupts upward from the company name (Greenhouse is an ATS).
-// They flutter, descend, and Tim arrives to catch them in waves and stack
-// them into a neat pile.
-//
-// Same shape as skills-cascade: arrival → core → exit, with the core's
-// impact frames driving the visible "fix" (here, papers snapping onto a pile).
+// Greenhouse Easter egg. Click "Greenhouse Software" → a burst of resume
+// papers erupts upward from the company name (Greenhouse is an ATS), then
+// flutters down and settles at the bottom of the role's stage div. After
+// the papers settle, Tim arrives from off-screen left, walks rightward
+// pushing a wide push-broom; landed papers caught in the broom's hitbox get
+// shoved off the right edge of the stage. Tim exits stage right.
 
-// ---- placeholder until catch-and-stack sprite is generated ----
-const CORE_CATCH_AND_STACK: AvatarAnim = {
-  sprite: '/sprites/tim/cores/catch-and-stack.png',
-  durationMs: 1800,
+// How many resume sheets fly out per click.
+const PAPER_COUNT = 100;
+
+// Gap between the paper's bottom edge and the bottom of the stage when
+// landed. Small, so it reads as "on the floor of this section".
+const GROUND_GAP_PX = 6;
+
+// Sprite box dimension (matches .greenhouse-paper CSS — sprite is 48×48
+// native pixel art). The burst graphic fills most of the box; the feather
+// graphic sits in the middle band, so landing alignment using the full box
+// height leaves a comfortable gap above the actual rendered feather.
+const PAPER_SIZE_PX = 48;
+
+// Avatar render width (matches .greenhouse-avatar CSS).
+const AVATAR_W = 192;
+
+// Push-broom core: stationary walk-push cycle. durationMs is one full play
+// of the 25-frame sprite — kept short so each broom stroke reads as
+// urgent/fast. `cycles` is how many times the sprite loops during the
+// sweep; total core time = durationMs * cycles. The JS-driven translate
+// spans the same total time, so a higher `cycles` value lets Tim cross
+// the stage slowly while the brooming motion stays fast and frequent.
+const CORE_BROOM_SWEEP: AvatarAnim = {
+  sprite: '/sprites/tim/cores/broom-sweep.png',
+  durationMs: 1500,
+  cycles: 3,
 };
 
-// Catch impact fractions of the core — when in the animation Tim's hands
-// "catch" a wave of in-flight papers and snap them onto the pile.
-// Last fraction is the squaring tap-tap (any leftover papers).
-const CATCH_IMPACT_FRACTIONS = [0.30, 0.55, 0.78] as const;
+// Beat after the click before the sweep sequence kicks off. Tuned so all
+// papers have time to burst → drift → land before Tim arrives.
+const SWEEP_DELAY_AFTER_CLICK_MS = 2200;
+// Beat after arrival lands before the sweep core starts.
+const ARRIVAL_TO_SWEEP_MS = 100;
+// Beat after sweep ends before exit kicks in.
+const SWEEP_TO_EXIT_HOLD_MS = 200;
 
-const ARRIVAL_TO_CORE_MS = 200;
-const CORE_TO_EXIT_HOLD_MS = 480;
-const PILE_FADE_MS = 700;
+// Broom front edge, as a fraction of the avatar bounding box. Any landed
+// paper at or behind this x-position gets swept — there is no rear bound,
+// because once the brush has crossed a paper it's "behind the broom" and
+// belongs in the pile regardless. Tuned to the painted brush's leading edge.
+const BROOM_FRONT_FRAC = 1.05;
+// Extra space to start the avatar off-screen-left, beyond -120 (which is the
+// leftmost a paper can land per the existing side-cull). With this margin
+// the brush's front edge starts to the LEFT of the leftmost possible paper,
+// so every paper is initially ahead of the brush and gets caught naturally
+// as the brush moves over it — no instant-snap teleporting from the left.
+const SWEEP_START_LEFT_MARGIN = 160;
 
-// How many resume sheets fly out per click. Enough to read as "a whole stack
-// got knocked over" without burying the page.
-const PAPER_COUNT = 18;
+// Scorecard rating sequence. Plays after the resumes get loaded into the
+// computer: screen flashes through Greenhouse's five scorecard ratings —
+// Strong No → No → Mixed → Yes → Strong Yes — getting progressively slower,
+// then lands on Strong Yes with a celebratory pulse. Icons are inlined SVG
+// (Material-style paths) so they render crisp at any size without needing
+// a sprite asset; colors match the Greenhouse scorecard reference.
+type Rating = 'strong-no' | 'no' | 'mixed' | 'yes' | 'strong-yes';
+
+const RATING_ORDER: Rating[] = ['strong-no', 'no', 'mixed', 'yes', 'strong-yes'];
+
+const ICON_STRONG_NO = `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">` +
+  `<polygon points="8,2 16,2 22,8 22,16 16,22 8,22 2,16 2,8" fill="#e23b29"/>` +
+  `<path d="M8.5 8.5 L15.5 15.5 M15.5 8.5 L8.5 15.5" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/>` +
+  `</svg>`;
+
+const ICON_NO = `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">` +
+  `<path fill="#e23b29" d="M15 3H6c-.83 0-1.54.5-1.84 1.22l-3.02 7.05c-.09.23-.14.47-.14.73v2c0 1.1.9 2 2 2h6.31l-.95 4.57-.03.32c0 .41.17.79.44 1.06L9.83 23l6.59-6.59c.36-.36.58-.86.58-1.41V5c0-1.1-.9-2-2-2zm4 0v12h4V3h-4z"/>` +
+  `</svg>`;
+
+const ICON_MIXED = `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">` +
+  `<path fill="#f4b942" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zM7 13v-2h10v2H7z"/>` +
+  `</svg>`;
+
+const ICON_YES = `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">` +
+  `<path fill="#43b5a0" d="M9 21h9c.83 0 1.54-.5 1.84-1.22l3.02-7.05c.09-.23.14-.47.14-.73v-2c0-1.1-.9-2-2-2h-6.31l.95-4.57.03-.32c0-.41-.17-.79-.44-1.06L14.17 1 7.59 7.59C7.22 7.95 7 8.45 7 9v10c0 1.1.9 2 2 2zM1 9h4v12H1V9z"/>` +
+  `</svg>`;
+
+const ICON_STRONG_YES = `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">` +
+  `<path fill="#43b5a0" d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/>` +
+  `</svg>`;
+
+const RATING_GLYPHS: Record<Rating, { svg: string; glow: string }> = {
+  'strong-no':  { svg: ICON_STRONG_NO,  glow: '#e23b29' },
+  'no':         { svg: ICON_NO,         glow: '#e23b29' },
+  'mixed':      { svg: ICON_MIXED,      glow: '#f4b942' },
+  'yes':        { svg: ICON_YES,        glow: '#43b5a0' },
+  'strong-yes': { svg: ICON_STRONG_YES, glow: '#43b5a0' },
+};
+
+// Tempo of the flash. Two fast cycles set up the "slot-machine" beat, then
+// a slower pass deliberately approaches the answer, then it lands on Strong
+// Yes for a longer celebratory hold. After the hold the WHOLE supercomputer
+// fades (with Strong Yes still on the screen) — no flash-back-to-idle-'g'
+// beat between the answer and the chassis leaving.
+const FLASH_FAST_MS = 70;
+const FLASH_MED_MS = 110;
+const FLASH_SLOW_MS = 180;
+const FLASH_LANDING_HOLD_MS = 2200;
+// Matches .greenhouse-supercomputer's opacity transition.
+const COMPUTER_FADE_OUT_MS = 380;
+
+// Swept-paper pile geometry. Swept papers don't collapse to a single point
+// — they spread out in a small grid in front of the brush, each new paper
+// taking the next slot. Row N stacks above row N-1, so the pile grows up
+// as well as forward and reads as a tidy heap instead of a clumped ball.
+const PILE_ROW_SIZE = 6;
+const PILE_X_STEP = 5;
+const PILE_Y_STEP = 5;
+const PILE_BACK_X = 4;
+// Tiny per-paper jitter (px) so the grid doesn't look mechanical.
+const PILE_JITTER_X = 3;
+const PILE_JITTER_Y = 2;
 
 type Paper = {
   el: HTMLElement;
+  // Stage-local coordinates (papers are position: absolute inside .greenhouse-stage).
   x: number;
   y: number;
   vx: number;
   vy: number;
   rotation: number;
   rotationVel: number;
-  caught: boolean;
+  landed: boolean;
+  // Has the paper crossed its apex and morphed to feather/profile mode?
+  profileMode: boolean;
+  scale: number;
+  // Lateral flutter — each paper has its own sinusoidal sway acceleration
+  // so the flock doesn't oscillate in lockstep.
+  swayAmp: number;
+  swayFreq: number;
+  swayPhase: number;
+  birthTime: number;
+  // Once swept, the paper rides the brush in a tidy grid pile. sweptOffsetX
+  // is its fixed x distance forward of the brush front (positive — paper
+  // is in front of brush, being pushed). sweptOffsetY is its fixed y
+  // displacement from the floor (≤ 0 — higher rows of the pile sit above
+  // lower ones).
+  swept: boolean;
+  sweptOffsetX: number;
+  sweptOffsetY: number;
 };
 
 export function initGreenhouseCascade() {
   const stage = document.querySelector<HTMLElement>('.greenhouse-stage');
   const trigger = stage?.querySelector<HTMLElement>('.greenhouse-trigger') ?? null;
-  const greenhouseAvatar = stage?.querySelector<HTMLElement>('.greenhouse-avatar') ?? null;
-  const pile = stage?.querySelector<HTMLElement>('.greenhouse-pile') ?? null;
-  if (!stage || !trigger || !greenhouseAvatar || !pile) return;
+  const avatarEl = stage?.querySelector<HTMLElement>('.greenhouse-avatar') ?? null;
+  const screenEl = stage?.querySelector<HTMLElement>('.greenhouse-screen') ?? null;
+  if (!stage || !trigger || !avatarEl) return;
 
-  const avatar = createAvatarController(greenhouseAvatar);
+  const avatar = createAvatarController(avatarEl);
 
-  let busy = false;
   const activePapers: Paper[] = [];
   let physicsFrame: number | null = null;
   let physicsLastTime = 0;
-  const timers: number[] = [];
-  let stackedCount = 0;
+  // Increments for every paper that gets caught by the broom, used to
+  // assign each paper its slot in the pile grid. Reset on clearAll.
+  let sweptCount = 0;
+  // Every setTimeout used to drive the sweep sequence is tracked here so a
+  // mid-sweep re-click can cancel them all atomically. Includes the initial
+  // delay timer + the sweep-active on/off flips inside runSweep.
+  const sweepTimers: number[] = [];
+  // Broom sweep is driven by the physics loop reading these refs each
+  // tick — single source of truth for both the avatar's `left` and the
+  // brush hitbox.
+  let sweepStartTime = 0;
+  let sweepEndTime = 0;
+  let sweepFromX = 0;
+  let sweepToX = 0;
+  let sweepActive = false;
 
-  function clearTimers() {
-    timers.forEach((t) => window.clearTimeout(t));
-    timers.length = 0;
+  function clearAll() {
+    activePapers.forEach((p) => p.el.remove());
+    activePapers.length = 0;
+    sweepTimers.forEach((t) => window.clearTimeout(t));
+    sweepTimers.length = 0;
+    sweepActive = false;
+    sweptCount = 0;
+    avatar.reset();
+    avatarEl!.style.left = '';
+    stage!.classList.remove('is-active');
+    if (screenEl) {
+      screenEl.classList.remove('is-flashing', 'is-landing');
+      screenEl.innerHTML = '';
+      screenEl.style.removeProperty('--gh-screen-glow');
+    }
   }
 
-  function spawnPapers(originX: number, originY: number) {
-    for (let i = 0; i < PAPER_COUNT; i++) {
-      // Slight stagger so the burst reads as an eruption rather than a single
-      // popcorn pop.
-      const delay = Math.random() * 90;
-      window.setTimeout(() => {
-        const el = document.createElement('div');
-        el.className = 'greenhouse-paper';
+  // Plays the scorecard-rating flash sequence on the supercomputer's CRT.
+  // Caller decides when to invoke (e.g., after the resumes have been
+  // loaded into the RESUMES slot). Each scheduled tick is registered with
+  // sweepTimers so a re-click resets cleanly via clearAll. Honours
+  // prefers-reduced-motion by jumping straight to the Strong Yes landing.
+  function runScorecardFlash() {
+    if (!screenEl) return;
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-        // Tiny per-paper visual variety: 3 stripe styles to suggest different
-        // resume layouts. Pure CSS, no images.
-        const variant = i % 3;
-        if (variant === 1) el.classList.add('greenhouse-paper--variant-b');
-        else if (variant === 2) el.classList.add('greenhouse-paper--variant-c');
+    const showRating = (r: Rating, withLanding = false) => {
+      const { svg, glow } = RATING_GLYPHS[r];
+      screenEl.innerHTML = svg;
+      screenEl.style.setProperty('--gh-screen-glow', glow);
+      if (withLanding) {
+        // Force the landing class to retrigger the keyframes even if the
+        // node already had it from a prior click within the same session.
+        screenEl.classList.remove('is-landing');
+        void screenEl.offsetWidth;
+        screenEl.classList.add('is-landing');
+      }
+    };
 
-        // Initial offset right at the trigger word — small jitter so they
-        // don't all stack at one pixel.
-        const jitterX = (Math.random() - 0.5) * 18;
-        const jitterY = (Math.random() - 0.5) * 8;
-        const x = originX + jitterX;
-        const y = originY + jitterY;
+    screenEl.classList.add('is-flashing');
 
-        // Burst velocity: strongly upward, with horizontal spread biased
-        // outward from the click point. Papers are light — modest speeds,
-        // light gravity later.
-        const upSpeed = 480 + Math.random() * 320;
-        const sideBias = Math.random() < 0.5 ? -1 : 1;
-        const sideSpeed = sideBias * (60 + Math.random() * 280);
-        const rotation = (Math.random() - 0.5) * 60;
-        const rotationVel = (Math.random() - 0.5) * 520;
-
-        el.style.transform = `translate(${x}px, ${y}px) translate(-50%, -50%) rotate(${rotation}deg)`;
-        document.body.appendChild(el);
-
-        activePapers.push({
-          el,
-          x,
-          y,
-          vx: sideSpeed,
-          vy: -upSpeed,
-          rotation,
-          rotationVel,
-          caught: false,
-        });
-        ensurePhysicsLoop();
-      }, delay);
+    if (reduced) {
+      showRating('strong-yes', false);
+      sweepTimers.push(
+        window.setTimeout(() => screenEl.classList.remove('is-flashing'), 2000),
+      );
+      return;
     }
+
+    // Build the tempo: two fast cycles (slot-machine spin), one slower
+    // cycle that stops one short, then the deliberate Strong Yes landing.
+    const ticks: Array<{ rating: Rating; ms: number; landing?: boolean }> = [];
+    for (const r of RATING_ORDER) ticks.push({ rating: r, ms: FLASH_FAST_MS });
+    for (const r of RATING_ORDER) ticks.push({ rating: r, ms: FLASH_MED_MS });
+    for (const r of RATING_ORDER.slice(0, 4)) ticks.push({ rating: r, ms: FLASH_SLOW_MS });
+    ticks.push({ rating: 'strong-yes', ms: FLASH_LANDING_HOLD_MS, landing: true });
+
+    let t = 0;
+    for (const step of ticks) {
+      const r = step.rating;
+      const landing = step.landing === true;
+      sweepTimers.push(window.setTimeout(() => showRating(r, landing), t));
+      t += step.ms;
+    }
+    // End of the strong-yes hold — drop .is-active so the whole
+    // supercomputer (with Strong Yes still showing on its CRT) fades out
+    // as one unit. The child screen overlay inherits the parent's
+    // dwindling visibility, so the answer fades with the chassis instead
+    // of flashing back to the idle 'g' first. Article text also un-dims.
+    sweepTimers.push(
+      window.setTimeout(() => stage!.classList.remove('is-active'), t),
+    );
+    // After the chassis is fully gone, clean up the screen DOM so a
+    // re-click starts from a blank state.
+    sweepTimers.push(
+      window.setTimeout(() => {
+        screenEl.classList.remove('is-flashing', 'is-landing');
+        screenEl.innerHTML = '';
+        screenEl.style.removeProperty('--gh-screen-glow');
+      }, t + COMPUTER_FADE_OUT_MS + 80),
+    );
+  }
+
+  function spawnPapers(originLeft: number, originWidth: number, originY: number) {
+    // All papers burst out at the same instant — no stagger.
+    for (let i = 0; i < PAPER_COUNT; i++) {
+      const el = document.createElement('div');
+      el.className = 'greenhouse-paper';
+
+      // Spawn anywhere along the trigger word's horizontal extent, on the
+      // same horizontal line the user clicked. Reads as the whole word
+      // erupting, not a single point exploding.
+      const x = originLeft + Math.random() * originWidth;
+      const jitterY = (Math.random() - 0.5) * 8;
+      const y = originY + jitterY;
+
+      // Burst velocity: modest upward kick, with horizontal spread biased
+      // outward from the click point. Tuned so peak height stays roughly
+      // within the role section.
+      const upSpeed = 220 + Math.random() * 220;
+      const sideBias = Math.random() < 0.5 ? -1 : 1;
+      const sideSpeed = sideBias * (40 + Math.random() * 220);
+      const rotation = (Math.random() - 0.5) * 60;
+      const rotationVel = (Math.random() - 0.5) * 360;
+      // Sprite is 48×48 native; render slightly above 1× with per-paper
+      // variance for visual interest. ~43–67px on screen.
+      const scale = 0.9 + Math.random() * 0.5;
+      const swayAmp = 70 + Math.random() * 110;
+      const swayFreq = 1.2 + Math.random() * 1.6;
+      const swayPhase = Math.random() * Math.PI * 2;
+      const birthTime = performance.now();
+
+      el.style.transform =
+        `translate(${x}px, ${y}px) translate(-50%, -50%) ` +
+        `rotate(${rotation}deg) scale(${scale})`;
+      stage!.appendChild(el);
+
+      activePapers.push({
+        el,
+        x,
+        y,
+        vx: sideSpeed,
+        vy: -upSpeed,
+        rotation,
+        rotationVel,
+        landed: false,
+        profileMode: false,
+        scale,
+        swayAmp,
+        swayFreq,
+        swayPhase,
+        birthTime,
+        swept: false,
+        sweptOffsetX: 0,
+        sweptOffsetY: 0,
+      });
+    }
+    ensurePhysicsLoop();
   }
 
   function ensurePhysicsLoop() {
@@ -125,25 +332,111 @@ export function initGreenhouseCascade() {
     const dt = Math.min((now - physicsLastTime) / 1000, 1 / 30);
     physicsLastTime = now;
 
-    const W = window.innerWidth;
-    const H = window.innerHeight;
-    // Light gravity — papers drift, not fall like rocks.
-    const GRAVITY = 720;
-    // Air drag on horizontal velocity (papers don't keep flying sideways)
-    // and a soft cap on terminal vertical fall speed (paper terminal velocity).
+    const stageW = stage!.clientWidth;
+    const stageH = stage!.clientHeight;
+    // Faster fall than the previous pass — still feathery, but you can
+    // actually see them land in a reasonable beat.
+    const GRAVITY = 460;
     const HORIZONTAL_DRAG = 0.985;
-    const TERMINAL_VY = 220;
-    const ROTATION_DRAG = 0.992;
+    const TERMINAL_VY = 210;
+    const ROTATION_DRAG = 0.988;
+    const REST_DRAG = 0.82;
+
+    let anyMoving = false;
+
+    // Broom front edge in stage-local coords, if a sweep is active.
+    // Computed once per tick from the avatar's current position; we also
+    // write avatarEl.style.left here so there's a single source of truth
+    // for sweep motion.
+    let brushFront = 0;
+    if (sweepActive) {
+      const span = sweepEndTime - sweepStartTime;
+      const t = Math.min(1, Math.max(0, (now - sweepStartTime) / span));
+      const avatarX = sweepFromX + (sweepToX - sweepFromX) * t;
+      avatarEl!.style.left = `${avatarX}px`;
+      brushFront = avatarX + AVATAR_W * BROOM_FRONT_FRAC;
+    }
 
     for (let i = activePapers.length - 1; i >= 0; i--) {
       const p = activePapers[i];
 
-      // Caught papers ride a CSS transition to their pile slot — physics is
-      // off for them, but we keep them in the array so the cleanup path can
-      // remove them on stage reset.
-      if (p.caught) continue;
+      // Swept papers ride the brush in their assigned pile slot. Their
+      // x and y are recomputed each tick from the current brushFront +
+      // their fixed sweptOffsetX/Y, so the whole pile glides forward
+      // together at the brush's pace while keeping its shape.
+      if (p.swept) {
+        const landY = stageH - GROUND_GAP_PX - (PAPER_SIZE_PX / 2) * p.scale;
+        p.x = brushFront + p.sweptOffsetX;
+        p.y = landY + p.sweptOffsetY;
+        if (p.x > stageW + 60) {
+          p.el.remove();
+          activePapers.splice(i, 1);
+          continue;
+        }
+        p.el.style.transform =
+          `translate(${p.x}px, ${p.y}px) translate(-50%, -50%) ` +
+          `rotate(${p.rotation}deg) scale(${p.scale})`;
+        anyMoving = true;
+        continue;
+      }
 
-      p.vy += GRAVITY * dt;
+      if (p.landed) {
+        // Broom contact: any landed paper at or behind the brush front
+        // gets swept. No rear bound — once the broom has crossed a paper
+        // it's part of the pile. Robust to fast sweeps and to papers
+        // that landed in the leftmost margin.
+        if (sweepActive && p.x <= brushFront) {
+          p.swept = true;
+          // Assign this paper a slot in the pile grid. Row 0 sits on the
+          // floor immediately in front of the brush; later rows stack up
+          // and slightly back, so the pile grows up + forward.
+          const idx = sweptCount++;
+          const row = Math.floor(idx / PILE_ROW_SIZE);
+          const col = idx % PILE_ROW_SIZE;
+          p.sweptOffsetX =
+            PILE_BACK_X + col * PILE_X_STEP +
+            (Math.random() - 0.5) * PILE_JITTER_X;
+          p.sweptOffsetY =
+            -row * PILE_Y_STEP + (Math.random() - 0.5) * PILE_JITTER_Y;
+          // Lock papers' rotation to a small static tilt — a neat pile
+          // doesn't tumble, it sits.
+          p.rotation = (Math.random() - 0.5) * 16;
+          p.rotationVel = 0;
+          continue;
+        }
+        // Landed papers gently lose any residual sideways drift and rotation,
+        // then go fully static. Once everything is static we stop the loop
+        // (unless the sweep is still running).
+        if (Math.abs(p.vx) > 0.5 || Math.abs(p.rotationVel) > 1) {
+          p.vx *= REST_DRAG;
+          p.rotationVel *= REST_DRAG;
+          p.x += p.vx * dt;
+          p.rotation += p.rotationVel * dt;
+          p.el.style.transform =
+            `translate(${p.x}px, ${p.y}px) translate(-50%, -50%) ` +
+            `rotate(${p.rotation}deg) scale(${p.scale})`;
+          anyMoving = true;
+        }
+        continue;
+      }
+
+      const tAlive = (now - p.birthTime) / 1000;
+
+      // Lateral flutter. Each paper integrates its own sinusoidal sway
+      // acceleration into vx, then drag pulls it back. Net effect: slow
+      // side-to-side drift, out of phase across the flock.
+      const swayAccel = p.swayAmp * Math.sin(p.swayFreq * tAlive + p.swayPhase);
+      p.vx += swayAccel * dt;
+
+      // Broadside lift. When the paper faces the air flat-on (rotation near
+      // 0° or 180°) it catches drag and falls slower; edge-on it slips
+      // through. cos(2·rot) is 1 when flat, -1 when edge-on — only the
+      // positive half subtracts from gravity.
+      const rotRad = (p.rotation * Math.PI) / 180;
+      const broadside = Math.max(0, Math.cos(2 * rotRad));
+      const effectiveGravity = GRAVITY * (1 - broadside * 0.28);
+
+      p.vy += effectiveGravity * dt;
       if (p.vy > TERMINAL_VY) p.vy = TERMINAL_VY;
       p.vx *= HORIZONTAL_DRAG;
       p.rotationVel *= ROTATION_DRAG;
@@ -152,156 +445,134 @@ export function initGreenhouseCascade() {
       p.y += p.vy * dt;
       p.rotation += p.rotationVel * dt;
 
-      // Off-screen guard — if a paper escapes past the bottom or sides
-      // before being caught, drop it silently.
-      if (p.y > H + 80 || p.x < -80 || p.x > W + 80) {
+      // Apex morph: as soon as the paper stops rising, swap to the thin
+      // profile/feather visual. The CSS transition smooths the shape change
+      // so it reads as the paper tipping out of plane.
+      if (!p.profileMode && p.vy >= 0) {
+        p.profileMode = true;
+        p.el.classList.add('is-falling');
+      }
+
+      // Side culls. Papers can leave the stage horizontally — let them go a
+      // bit past the edge for visual continuity, then drop them.
+      if (p.x < -120 || p.x > stageW + 120) {
         p.el.remove();
         activePapers.splice(i, 1);
         continue;
       }
 
-      p.el.style.transform = `translate(${p.x}px, ${p.y}px) translate(-50%, -50%) rotate(${p.rotation}deg)`;
+      // Landing: bottom edge of the (scaled) paper-sprite box reaches the
+      // floor of the stage. The feather graphic sits in the middle band of
+      // the box, so using the full box height as the reference lands the
+      // visible feather a little above the absolute floor — feels right.
+      const landY = stageH - GROUND_GAP_PX - (PAPER_SIZE_PX / 2) * p.scale;
+      if (p.y >= landY && p.vy > 0) {
+        p.y = landY;
+        p.vy = 0;
+        // Keep a fraction of horizontal velocity so the paper visibly skids
+        // a moment after landing before friction stops it.
+        p.vx *= 0.35;
+        p.rotationVel *= 0.25;
+        p.landed = true;
+      }
+
+      p.el.style.transform =
+        `translate(${p.x}px, ${p.y}px) translate(-50%, -50%) ` +
+        `rotate(${p.rotation}deg) scale(${p.scale})`;
+      anyMoving = true;
     }
 
-    if (activePapers.length > 0) {
+    // Keep the physics loop alive while the sweep is running even if all
+    // papers are at rest — the broom is moving and we still need to check
+    // for contact each frame.
+    if (anyMoving || sweepActive) {
       physicsFrame = requestAnimationFrame(physicsTick);
     } else {
       physicsFrame = null;
     }
   }
 
-  // Returns the viewport coords of the top of the pile (where caught papers
-  // should snap to). Sampled at catch time so layout shifts don't drift it.
-  function computePileTop() {
-    if (!pile) return null;
-    const r = pile.getBoundingClientRect();
-    return {
-      x: r.left + r.width / 2,
-      // Stack grows upward — each subsequent paper sits a little higher than
-      // the previous one.
-      baseY: r.bottom - 6,
-    };
-  }
-
-  function catchWave(targetCount: number) {
-    // Pick the lowest-altitude in-flight papers (closest to landing) and
-    // snap them onto the pile. A real catch reads as "he grabbed the ones
-    // that were about to hit the ground".
-    const inFlight = activePapers.filter((p) => !p.caught);
-    if (inFlight.length === 0) return;
-
-    inFlight.sort((a, b) => b.y - a.y);
-    const wave = inFlight.slice(0, targetCount);
-    if (wave.length === 0) return;
-
-    const target = computePileTop();
-    if (!target) return;
-
-    playPaperPat(Math.random());
-
-    wave.forEach((p, i) => {
-      p.caught = true;
-      const stackIdx = stackedCount + i;
-      // Each paper stacks 2px above the previous, with a tiny rotation
-      // jitter so the pile isn't perfectly square — feels hand-stacked.
-      const stackOffsetY = -stackIdx * 2;
-      const restRotation = (Math.random() - 0.5) * 6;
-
-      // Add a CSS transition for the snap-to-pile, then schedule a removal
-      // of the in-flight transform style — the resting state takes over.
-      p.el.style.transition =
-        'transform 0.28s cubic-bezier(0.42, 0.0, 0.6, 1.2)';
-      p.el.style.transform =
-        `translate(${target.x}px, ${target.baseY + stackOffsetY}px) ` +
-        `translate(-50%, -100%) rotate(${restRotation}deg)`;
-
-      // Once the paper has settled, transfer it from body into the pile so
-      // it can fade with the pile during exit.
-      window.setTimeout(() => {
-        if (!pile) return;
-        // Re-anchor: convert to pile-relative absolute position so it stays
-        // put when we drop the body-level transform.
-        const pileRect = pile.getBoundingClientRect();
-        const restedX = target.x - pileRect.left;
-        const restedY = target.baseY + stackOffsetY - pileRect.top;
-        p.el.style.transition = 'opacity 0.6s ease-out';
-        p.el.style.transform =
-          `translate(${restedX}px, ${restedY}px) translate(-50%, -100%) rotate(${restRotation}deg)`;
-        p.el.classList.add('is-stacked');
-        pile.appendChild(p.el);
-      }, 300);
-    });
-
-    stackedCount += wave.length;
-  }
-
-  function squareStack() {
-    // Final beat: any remaining in-flight papers snap, plus the visible
-    // "tap tap" sound. If everything's already caught, still play the tap
-    // — it's the punchline.
-    const remaining = activePapers.filter((p) => !p.caught).length;
-    if (remaining > 0) catchWave(remaining);
-    playStackTap();
-  }
-
-  function teardown() {
-    // Fade pile out, then remove all stacked + in-flight papers and reset.
-    const stacked = pile ? Array.from(pile.querySelectorAll<HTMLElement>('.greenhouse-paper')) : [];
-    stacked.forEach((el) => {
-      el.style.opacity = '0';
-    });
-
-    timers.push(
-      window.setTimeout(() => {
-        // Drop pile contents.
-        stacked.forEach((el) => el.remove());
-        // Drop any papers that never got caught (off-screen guard handles
-        // most, this catches edge cases).
-        activePapers.forEach((p) => p.el.remove());
-        activePapers.length = 0;
-        stackedCount = 0;
-        busy = false;
-      }, PILE_FADE_MS),
-    );
-  }
-
-  function start(clickX: number, clickY: number) {
-    if (busy) return;
-    busy = true;
-    clearTimers();
+  function runSweep() {
+    if (!stage || !avatarEl) return;
     avatar.reset();
-
-    playPaperWhoosh();
-    spawnPapers(clickX, clickY);
 
     const arrival = pickRandom(ARRIVALS);
     const exit = pickRandom(EXITS);
-    const core = CORE_CATCH_AND_STACK;
+    const core = CORE_BROOM_SWEEP;
 
-    const T_CORE_START = arrival.durationMs + ARRIVAL_TO_CORE_MS;
-    const T_CORE_END = T_CORE_START + core.durationMs;
-    const T_EXIT_START = T_CORE_END + CORE_TO_EXIT_HOLD_MS;
-    const T_TEARDOWN_START = T_EXIT_START + exit.durationMs;
+    const stageW = stage.clientWidth;
+    // Start far enough left that the brush's front edge begins LEFT of
+    // -120 (the leftmost a paper can land), so every paper is initially
+    // ahead of the brush and gets caught smoothly as it passes — no
+    // instant-snap jumps. Off-screen on the right too so the exit plays
+    // without popping at the stage edge.
+    const fromX = -AVATAR_W * BROOM_FRONT_FRAC - SWEEP_START_LEFT_MARGIN;
+    const toX = stageW + AVATAR_W * 0.4;
+    avatarEl.style.left = `${fromX}px`;
+
+    const totalCoreMs = core.durationMs * (core.cycles ?? 1);
+    const T_CORE_START = arrival.durationMs + ARRIVAL_TO_SWEEP_MS;
+    const T_CORE_END = T_CORE_START + totalCoreMs;
+    const T_EXIT_START = T_CORE_END + SWEEP_TO_EXIT_HOLD_MS;
 
     avatar.startArrival(arrival);
     avatar.scheduleCore(core, T_CORE_START);
     avatar.scheduleExit(exit, T_EXIT_START);
 
-    // Each catch wave grabs roughly 1/N of the papers. Last wave gets
-    // whatever's left and includes the squaring tap-tap.
-    const perWave = Math.ceil(PAPER_COUNT / CATCH_IMPACT_FRACTIONS.length);
-    CATCH_IMPACT_FRACTIONS.forEach((frac, i) => {
-      const at = T_CORE_START + frac * core.durationMs;
-      const isLast = i === CATCH_IMPACT_FRACTIONS.length - 1;
-      timers.push(
-        window.setTimeout(() => {
-          if (isLast) squareStack();
-          else catchWave(perWave);
-        }, at),
-      );
-    });
+    // Schedule the actual travel: starts when the core phase begins, ends
+    // when the core finishes. The physics loop reads sweep state each tick
+    // to update both the avatar's `left` and the broom hitbox.
+    const startedAt = performance.now();
+    sweepFromX = fromX;
+    sweepToX = toX;
+    sweepStartTime = startedAt + T_CORE_START;
+    sweepEndTime = startedAt + T_CORE_END;
 
-    timers.push(window.setTimeout(teardown, T_TEARDOWN_START));
+    sweepTimers.push(
+      window.setTimeout(() => {
+        sweepActive = true;
+        // A second whoosh as the broom catches the papers — the burst whoosh
+        // played at click time, this one anchors the sweep.
+        playPaperWhoosh();
+        ensurePhysicsLoop();
+      }, T_CORE_START),
+    );
+
+    sweepTimers.push(
+      window.setTimeout(() => {
+        sweepActive = false;
+        // Snap avatar to its end position so any rAF rounding doesn't leave
+        // it mid-stride.
+        avatarEl.style.left = `${toX}px`;
+      }, T_CORE_END),
+    );
+
+    // TODO: once the pickup-pile + put-in-receptacle animations land, move
+    // this flash trigger to fire when Tim drops the last resume into the
+    // RESUMES slot. For now it fires shortly after the sweep ends so the
+    // screen sequence can be reviewed in context.
+    const T_FLASH_START = T_CORE_END + 600;
+    sweepTimers.push(window.setTimeout(runScorecardFlash, T_FLASH_START));
+  }
+
+  function start(clickX: number, clickY: number) {
+    // Each click resets: clear any existing burst + avatar, then start fresh.
+    clearAll();
+    // Mark the stage active — fades the supercomputer in and dims the
+    // article text so the avatar reads clearly against any overlap. The
+    // deactivation timer at the end of the flash chain restores both.
+    stage!.classList.add('is-active');
+    // Convert viewport coords to stage-local coords once. Papers animate
+    // in stage-local space, so they scroll with the page. Spawn line spans
+    // the full width of the trigger word at the click's y.
+    const stageRect = stage!.getBoundingClientRect();
+    const triggerRect = trigger!.getBoundingClientRect();
+    const originLeft = triggerRect.left - stageRect.left;
+    const originWidth = triggerRect.width;
+    const localY = clickY - stageRect.top;
+    playPaperWhoosh();
+    spawnPapers(originLeft, originWidth, localY);
+    sweepTimers.push(window.setTimeout(runSweep, SWEEP_DELAY_AFTER_CLICK_MS));
   }
 
   trigger.addEventListener('click', (e) => {

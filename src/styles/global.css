@@ -50,7 +50,7 @@
     user-select: none;
   }
 
-  /* peace-sign spritesheet — 1280x1280 sheet of 5x5 256px frames, displayed at 96px.
+  /* thumbs-up-wink spritesheet — 1280x1280 sheet of 5x5 256px frames, displayed at 96px.
      Two concurrent step()s walk the frame grid: X cycles cols 0..4 once per row,
      Y advances rows 0..4 across the full duration. Plays once per click; the
      fade animation outlasts X/Y so the final frame is held during the fade-out. */
@@ -60,14 +60,14 @@
     top: 50%;
     width: 96px;
     height: 96px;
-    background-image: url('/sprites/tim/cores/peace-sign.png');
+    background-image: url('/sprites/tim/cores/thumbs-up-wink.png');
     background-size: 480px 480px;
     background-position: 0 0;
     background-repeat: no-repeat;
     image-rendering: pixelated;
     pointer-events: none;
     opacity: 0;
-    transform: translateY(-50%);
+    transform: translateY(-50%) scaleX(-1);
     isolation: isolate;
   }
 
@@ -119,10 +119,10 @@
   }
 
   @keyframes name-avatar-fade {
-    0%   { opacity: 0; transform: translate(-4px, -50%) scale(0.85); }
-    8%   { opacity: 1; transform: translate(0, -50%) scale(1); }
-    72%  { opacity: 1; transform: translate(0, -50%) scale(1); }
-    100% { opacity: 0; transform: translate(0, -50%) scale(1); }
+    0%   { opacity: 0; transform: translate(-4px, -50%) scale(0.85) scaleX(-1); }
+    8%   { opacity: 1; transform: translate(0, -50%) scale(1) scaleX(-1); }
+    72%  { opacity: 1; transform: translate(0, -50%) scale(1) scaleX(-1); }
+    100% { opacity: 0; transform: translate(0, -50%) scale(1) scaleX(-1); }
   }
 
   @keyframes name-godray {
@@ -246,20 +246,30 @@
 
   .skill-item {
     display: inline-block;
-    transform-origin: var(--fall-origin, 0% 100%);
-    transition: transform var(--fall-duration, 0.45s) cubic-bezier(0.55, 0.05, 0.45, 1);
     user-select: none;
   }
 
-  .skill-item.is-fallen {
-    transform:
-      translate(var(--fall-x, 0px), var(--fall-y, 0px))
-      rotate(var(--fall-angle, 82deg));
+  /* Separators sit between flying items; hide them during the cascade so the
+     punctuation doesn't float in place while skills fly. visibility (not
+     display) preserves layout so items land back in their original slots. */
+  .skills-stage.is-cascading .skill-sep {
+    visibility: hidden;
   }
 
-  .skill-item.is-falling-off {
-    transform-origin: 50% 50%;
-    transition: transform var(--fall-duration, 0.95s) cubic-bezier(0.42, 0, 0.7, 0.55);
+  /* Same idea for the disc bullets — fade the marker out so it doesn't float
+     where the (now-flying) list item used to be. Transparent colour keeps the
+     marker's reserved space, so items land back in their original slots. */
+  .skills-stage.is-cascading .resume-bullets li::marker {
+    color: transparent;
+  }
+
+  /* In-flight physics body. JS sets inline transition:none and updates the
+     inline transform per rAF tick; z-index lifts the item above the avatar so
+     it visibly bounces over him. Cleared at fly-back, restoring identity. */
+  .skill-item.is-flying {
+    position: relative;
+    z-index: 30;
+    will-change: transform;
   }
 
   .skills-stage {
@@ -330,6 +340,12 @@
   .skills-avatar.is-fading {
     transition: opacity 0.42s ease-out;
     opacity: 0;
+  }
+
+  /* Mirror the entire appearance horizontally. Set BEFORE the arrival starts
+     so all three phases share the orientation — flipping mid-sequence pops. */
+  .skills-avatar.is-facing-left {
+    transform: scaleX(-1);
   }
 
   @keyframes skills-avatar-x {
@@ -647,9 +663,13 @@
     user-select: none;
   }
 
+  /* Sits in stage-local coords; JS sets `left` per rAF tick during the sweep
+     so Tim walks from off-screen left to off-screen right across the role
+     section. Bottom-aligned to the section's floor so his feet sit on the
+     same line the papers landed on. */
   .greenhouse-avatar {
     position: absolute;
-    right: 0;
+    left: 0;
     bottom: 0;
     width: 192px;
     height: 192px;
@@ -667,30 +687,7 @@
 
   @media (max-width: 900px) {
     .greenhouse-avatar {
-      right: 0;
       bottom: -212px;
-    }
-  }
-
-  /* Pile sits where the in-sprite pile is painted (center-bottom of the
-     192px avatar slot, slightly forward of Tim's feet) so the DOM pile and
-     the painted pile read as the same object. Persists past frame 25
-     (where the painted pile vanishes) to carry visual continuity into the
-     exit + fade. */
-  .greenhouse-pile {
-    position: absolute;
-    right: 70px;
-    bottom: 14px;
-    width: 50px;
-    height: 70px;
-    pointer-events: none;
-    z-index: 24;
-  }
-
-  @media (max-width: 900px) {
-    .greenhouse-pile {
-      right: 70px;
-      bottom: -198px;
     }
   }
 
@@ -701,8 +698,13 @@
   .greenhouse-avatar.is-exiting {
     opacity: 1;
     animation:
-      greenhouse-avatar-x var(--anim-row-duration) steps(5, jump-none) 5 forwards,
-      greenhouse-avatar-y var(--anim-duration) steps(5, jump-none) 1 forwards;
+      greenhouse-avatar-x var(--anim-row-duration) steps(5, jump-none) forwards,
+      greenhouse-avatar-y var(--anim-duration) steps(5, jump-none) forwards;
+    /* Iteration counts driven by AvatarController.loadAnim. Defaults (5/1)
+       reproduce a single play of the 5×5 grid; the broom-sweep core sets
+       higher values so the sprite loops while the JS-driven translate plays
+       out at a slower tempo. */
+    animation-iteration-count: var(--anim-x-iters, 5), var(--anim-y-iters, 1);
   }
 
   .greenhouse-avatar.is-arrival-held,
@@ -714,6 +716,11 @@
   .greenhouse-avatar.is-fading {
     transition: opacity 0.42s ease-out;
     opacity: 0;
+  }
+
+  /* See .skills-avatar.is-facing-left — same contract here. */
+  .greenhouse-avatar.is-facing-left {
+    transform: scaleX(-1);
   }
 
   @keyframes greenhouse-avatar-x {
@@ -735,61 +742,181 @@
     }
   }
 
-  /* Resume paper sprite — small white rect with thin gray "text" lines.
-     Lives in document.body during flight (position: fixed) so it can fly
-     anywhere on screen, then transferred into .greenhouse-pile (position:
-     absolute, .is-stacked) once caught so it can fade with the pile. */
+  /* Resume paper sprite. Two visual states, both pixel-art PNGs at 48×48
+     native resolution:
+       - default ("burst"): face-on resume — generated /sprites/papers/resume-burst.png
+       - .is-falling: feather/profile view — /sprites/papers/resume-feather.png
+     Papers are parented to .greenhouse-stage (position: absolute) so they
+     scroll with the role section and the floor is the stage's bottom edge.
+     image-rendering keeps the pixel-art crisp under any scale variance. */
   .greenhouse-paper {
-    position: fixed;
+    position: absolute;
     top: 0;
     left: 0;
-    width: 22px;
-    height: 30px;
-    background-color: #fafafa;
-    border: 1px solid #c7c7d1;
-    border-radius: 1px;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
-    background-image:
-      linear-gradient(to bottom, transparent 4px, #b8b8c2 4px, #b8b8c2 5px, transparent 5px),
-      linear-gradient(to bottom, transparent 9px, #d4d4dc 9px, #d4d4dc 10px, transparent 10px),
-      linear-gradient(to bottom, transparent 14px, #d4d4dc 14px, #d4d4dc 15px, transparent 15px),
-      linear-gradient(to bottom, transparent 19px, #d4d4dc 19px, #d4d4dc 20px, transparent 20px),
-      linear-gradient(to bottom, transparent 24px, #d4d4dc 24px, #d4d4dc 25px, transparent 25px);
+    width: 48px;
+    height: 48px;
+    background-image: url('/sprites/papers/resume-burst.png');
+    background-size: 48px 48px;
+    background-repeat: no-repeat;
+    background-position: center;
+    image-rendering: pixelated;
     pointer-events: none;
     z-index: 9998;
     will-change: transform, opacity;
+    transition: background-image 0.12s ease-out;
   }
 
-  /* Three minor variants — different fake "header" position so the resumes
-     read as a stack of slightly different documents, not photocopies. */
-  .greenhouse-paper--variant-b {
-    background-image:
-      linear-gradient(to bottom, transparent 5px, #a8a8b4 5px, #a8a8b4 7px, transparent 7px),
-      linear-gradient(to bottom, transparent 11px, #d4d4dc 11px, #d4d4dc 12px, transparent 12px),
-      linear-gradient(to bottom, transparent 16px, #d4d4dc 16px, #d4d4dc 17px, transparent 17px),
-      linear-gradient(to bottom, transparent 21px, #d4d4dc 21px, #d4d4dc 22px, transparent 22px);
+  .greenhouse-paper.is-falling {
+    background-image: url('/sprites/papers/resume-feather.png');
   }
 
-  .greenhouse-paper--variant-c {
-    background-image:
-      linear-gradient(to bottom, transparent 3px, #b8b8c2 3px, #b8b8c2 4px, transparent 4px),
-      linear-gradient(to bottom, transparent 7px, #b8b8c2 7px, #b8b8c2 8px, transparent 8px),
-      linear-gradient(to bottom, transparent 13px, #d4d4dc 13px, #d4d4dc 14px, transparent 14px),
-      linear-gradient(to bottom, transparent 18px, #d4d4dc 18px, #d4d4dc 19px, transparent 19px),
-      linear-gradient(to bottom, transparent 23px, #d4d4dc 23px, #d4d4dc 24px, transparent 24px);
-  }
-
-  /* Stacked papers live inside .greenhouse-pile (position: absolute, not
-     fixed). Drop the fixed position so the pile-relative transform takes
-     over. */
-  .greenhouse-paper.is-stacked {
+  /* The Greenhouse supercomputer. Idle is a 25-frame AutoSprite spritesheet
+     (5x5 grid of 384px frames, 1920x1920 total) generated from the static
+     base. Two-axis steps(5) keyframes walk the grid — X cycles through 5
+     columns once per row, Y advances one row per X cycle — same pattern as
+     .name-avatar / .skills-avatar. Full loop is 2.4s (~10fps). The screen
+     'g' cycles through diagnostic colors and the chassis indicator LEDs
+     flicker subtly; chassis silhouette stays still. */
+  .greenhouse-supercomputer {
+    /* Hidden by default — only fades in while the easter egg is active
+       (.greenhouse-stage.is-active). Anchored to the article's bottom-right
+       so the computer's base sits on the same floor line the avatar walks
+       along. On viewports wide enough to clear the resume container, the
+       computer projects past the article's right edge into the page margin
+       instead of overlapping content. On mobile it scales down so the
+       whole computer fits inside the article block. The article text dims
+       (see .greenhouse-stage.is-active > :not(...)) so the avatar reads
+       clearly on top of any overlap. */
     position: absolute;
+    bottom: 0;
+    right: 0;
+    /* z-index: 1 keeps the chassis behind in-flight papers (9998) and the
+       avatar (25). Without an explicit z-index the animated spritesheet
+       can get promoted to a compositor layer that paints on top of those
+       siblings regardless of document order. */
+    z-index: 1;
+    width: 384px;
+    height: 384px;
+    background-image: url('/sprites/greenhouse/supercomputer-idle.png');
+    background-size: 1920px 1920px;
+    background-position: 0 0;
+    background-repeat: no-repeat;
+    image-rendering: pixelated;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 380ms ease;
+    /* steps(5) (= jump-end) paired with `to:-1920px` (full sheet width)
+       is the canonical pattern for an INFINITE spritesheet loop — it
+       gives 5 equal intervals snapped to col 0..4 and wraps cleanly. The
+       avatar animations elsewhere in this file use `steps(5, jump-none)`,
+       but those are one-shot plays ending in `forwards`; for `infinite`
+       that variant puts frame stops at duration fractions (25/50/75%)
+       that don't align with frame boundaries and the sprite appears to
+       slide between columns. */
+    animation:
+      greenhouse-super-x 0.48s steps(5) infinite,
+      greenhouse-super-y 2.4s  steps(5) infinite;
   }
 
-  @media (prefers-color-scheme: dark) {
-    .greenhouse-paper {
-      background-color: #e8e8ee;
-      border-color: #6d6d7a;
+  .greenhouse-stage.is-active .greenhouse-supercomputer {
+    opacity: 1;
+  }
+
+  /* Resume container is max-w-page = 46rem (736px). At ≥1600px viewport
+     there's enough side margin (~432px) to fit the 384px computer + a
+     24px gap without overlapping article content. */
+  @media (min-width: 1600px) {
+    .greenhouse-supercomputer {
+      right: auto;
+      left: calc(100% + 24px);
+    }
+  }
+
+  /* Mobile: shrink visually so the whole computer fits inside the article
+     block. transform-origin: bottom right keeps the floor line and right
+     anchor stable. */
+  @media (max-width: 480px) {
+    .greenhouse-supercomputer {
+      transform: scale(0.65);
+      transform-origin: bottom right;
+    }
+  }
+
+  /* Dim the article's text content while the egg plays out so the avatar
+     reads clearly walking across — and so the supercomputer doesn't fight
+     with bullets/headings on viewports where they overlap. Excludes the
+     avatar, supercomputer, and any in-flight paper sprites; those stay
+     full-opacity. */
+  .greenhouse-stage > :not(.greenhouse-supercomputer):not(.greenhouse-avatar):not(.greenhouse-paper) {
+    transition: opacity 380ms ease;
+  }
+
+  .greenhouse-stage.is-active > :not(.greenhouse-supercomputer):not(.greenhouse-avatar):not(.greenhouse-paper) {
+    opacity: 0.4;
+  }
+
+  /* Scorecard flash overlay. Sits over the CRT screen area of the
+     supercomputer (coordinates are %s within the 384x384 idle frame,
+     measured against the painted bezel), hiding the cycling 'g' while
+     a rating sequence flashes through. JS toggles .is-flashing and
+     injects an SVG; the landing icon also gets .is-landing for a
+     celebratory pulse. The chassis LED animation underneath keeps
+     running through it — reinforces the "computer is working" beat. */
+  .greenhouse-screen {
+    position: absolute;
+    left: 18.75%;
+    top: 16.9%;
+    width: 42.2%;
+    height: 35.2%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    pointer-events: none;
+    background: #050709;
+    transition: opacity 120ms ease;
+  }
+
+  .greenhouse-screen.is-flashing {
+    opacity: 1;
+  }
+
+  .greenhouse-screen svg {
+    width: 58%;
+    height: 58%;
+    /* Glow color set per-icon via inline --gh-screen-glow. */
+    filter: drop-shadow(0 0 6px var(--gh-screen-glow, #fff));
+  }
+
+  .greenhouse-screen.is-landing svg {
+    animation: gh-screen-landing 1.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  @keyframes gh-screen-landing {
+    0%   { transform: scale(0.85); }
+    35%  { transform: scale(1.18); }
+    100% { transform: scale(1.00); }
+  }
+
+  @keyframes greenhouse-super-x {
+    from { background-position-x: 0; }
+    to   { background-position-x: -1920px; }
+  }
+
+  @keyframes greenhouse-super-y {
+    from { background-position-y: 0; }
+    to   { background-position-y: -1920px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .greenhouse-supercomputer {
+      animation: none;
+      background-position: 0 0;
+    }
+    .greenhouse-screen,
+    .greenhouse-screen.is-landing svg {
+      transition: none;
+      animation: none;
     }
   }
 
@@ -987,18 +1114,24 @@
     color: #fff;
   }
 
-  /* Scrolling status bar at the viewport bottom — the <marquee> homage. JS
-     injects the wrapper once; CSS hides it unless body.era-90s is on. Body
-     gets padding-bottom in 90s mode so the bar never covers resume content. */
-  .era-90s-marquee {
+  /* ---------- Shared era decor (marquee + top/bottom banners) ----------
+     One element each, content + skin swapped per era by JS. Hidden unless an
+     era class is on the body. Eras opt in by setting display + per-era
+     styling under their own body class. */
+
+  .era-marquee,
+  .era-top-banner,
+  .era-bottom-banner {
     display: none;
   }
 
-  body.era-90s {
-    padding-bottom: 26px;
-  }
-
-  body.era-90s .era-90s-marquee {
+  /* Base marquee chrome — fixed bar at viewport bottom, scrolling span.
+     Per-era CSS overrides background/border/font color. */
+  body.era-90s .era-marquee,
+  body.era-80s .era-marquee,
+  body.era-60s .era-marquee,
+  body.era-west .era-marquee,
+  body.era-dino .era-marquee {
     display: block;
     position: fixed;
     bottom: 0;
@@ -1007,43 +1140,615 @@
     height: 24px;
     z-index: 100;
     overflow: hidden;
-    background: #000080;
-    border-top: 2px solid #ffffff;
     pointer-events: none;
   }
 
-  body.era-90s .era-90s-marquee > span {
+  body.era-90s .era-marquee > span,
+  body.era-80s .era-marquee > span,
+  body.era-60s .era-marquee > span,
+  body.era-west .era-marquee > span,
+  body.era-dino .era-marquee > span {
     display: inline-block;
     position: absolute;
     left: 100%;
     top: 3px;
     white-space: nowrap;
-    font-family: 'Times New Roman', Times, serif;
     font-size: 13px;
     font-weight: bold;
-    color: #ffff00;
-    animation: era-90s-marquee-scroll 22s linear infinite;
+    animation: era-marquee-scroll 22s linear infinite;
     will-change: transform;
   }
 
-  @keyframes era-90s-marquee-scroll {
+  @keyframes era-marquee-scroll {
     from { transform: translateX(0); }
     to   { transform: translateX(calc(-100vw - 100%)); }
+  }
+
+  /* Top banner — fixed strip above the resume header. Per-era CSS opts in. */
+  body.era-80s .era-top-banner,
+  body.era-60s .era-top-banner,
+  body.era-west .era-top-banner,
+  body.era-dino .era-top-banner {
+    display: block;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 99;
+    text-align: center;
+    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: bold;
+    letter-spacing: 0.16em;
+    pointer-events: none;
+  }
+
+  /* Bottom banner — sits ABOVE the marquee bar (which is height: 24px). */
+  body.era-80s .era-bottom-banner,
+  body.era-60s .era-bottom-banner,
+  body.era-west .era-bottom-banner,
+  body.era-dino .era-bottom-banner {
+    display: block;
+    position: fixed;
+    bottom: 24px;
+    left: 0;
+    right: 0;
+    z-index: 99;
+    text-align: center;
+    padding: 4px 12px;
+    font-size: 11px;
+    font-weight: bold;
+    letter-spacing: 0.14em;
+    pointer-events: none;
+  }
+
+  /* Body padding so banners + marquee never cover resume content. */
+  body.era-90s {
+    padding-bottom: 26px;
+  }
+  body.era-80s,
+  body.era-60s,
+  body.era-west,
+  body.era-dino {
+    padding-top: 32px;
+    padding-bottom: 56px;
+  }
+
+  /* ---------- /Shared era decor ---------- */
+
+  /* 90s marquee skin. */
+  body.era-90s .era-marquee {
+    background: #000080;
+    border-top: 2px solid #ffffff;
+  }
+  body.era-90s .era-marquee > span {
+    font-family: 'Times New Roman', Times, serif;
+    color: #ffff00;
+  }
+
+  /* Tim arrives to fix the broken timeline. Position is set per-click by JS
+     (top/left in viewport coords) so he appears next to the date the user
+     clicked — that's the visible cause/effect link.
+
+     Base styling is NOT gated by body.era-90s: the un-warp click flips that
+     class off mid-sequence, and the avatar needs to stay visible through the
+     core + exit + fade. Opacity is 0 by default; phase classes
+     (is-arriving/is-coring/...) drive visibility. */
+  .timewarp-avatar {
+    display: block;
+    position: fixed;
+    /* Off-screen until JS positions per-click. */
+    top: -9999px;
+    left: -9999px;
+    width: 192px;
+    height: 192px;
+    background-image: var(--sprite-url, none);
+    background-size: 960px 960px;
+    background-position: 0 0;
+    background-repeat: no-repeat;
+    image-rendering: pixelated;
+    pointer-events: none;
+    opacity: 0;
+    z-index: 110;
+    --anim-duration: 1s;
+    --anim-row-duration: 0.2s;
+  }
+
+  .timewarp-avatar.is-arriving,
+  .timewarp-avatar.is-coring,
+  .timewarp-avatar.is-exiting {
+    opacity: 1;
+    animation:
+      timewarp-avatar-x var(--anim-row-duration) steps(5, jump-none) 5 forwards,
+      timewarp-avatar-y var(--anim-duration) steps(5, jump-none) 1 forwards;
+  }
+
+  .timewarp-avatar.is-arrival-held,
+  .timewarp-avatar.is-core-held {
+    opacity: 1;
+    background-position: -768px -768px;
+  }
+
+  .timewarp-avatar.is-fading {
+    transition: opacity 0.42s ease-out;
+    opacity: 0;
+  }
+
+  @keyframes timewarp-avatar-x {
+    from { background-position-x: 0; }
+    to { background-position-x: -768px; }
+  }
+
+  @keyframes timewarp-avatar-y {
+    from { background-position-y: 0; }
+    to { background-position-y: -768px; }
   }
 
   @media (prefers-reduced-motion: reduce) {
     body.era-90s .resume-name {
       animation: none;
     }
-    body.era-90s .era-90s-marquee {
-      display: none;
+    /* Reduced motion: hide all era decor and skip the avatar sequence — the
+       click-to-toggle still flips body classes, but the moving parts go away. */
+    .era-marquee,
+    .era-top-banner,
+    .era-bottom-banner {
+      display: none !important;
     }
-    body.era-90s {
+    body.era-90s,
+    body.era-80s,
+    body.era-60s,
+    body.era-west,
+    body.era-dino {
+      padding-top: 0;
       padding-bottom: 0;
+    }
+    .timewarp-avatar {
+      display: none;
     }
   }
 
   /* ---------- /90s time-warp ---------- */
+
+  /* ---------- 80s vaporwave / corporate boardroom ----------
+     Quarterly-earnings-report energy: chrome serif heading, dark navy
+     gradient with hot-pink + cyan accents, neon grid floor, conservative
+     widescreen typography for the resume body. */
+
+  body.era-80s {
+    background:
+      linear-gradient(180deg, #1a0033 0%, #2d0048 50%, #4a0066 100%);
+    color: #fce8ff;
+    /* Neon perspective grid at the bottom — tilted via skewY then masked to
+       fade up. Pure CSS, no extra DOM. */
+    background-attachment: fixed;
+  }
+
+  body.era-80s::before {
+    content: '';
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 24px;
+    height: 40vh;
+    background:
+      linear-gradient(transparent 0%, rgba(255, 0, 200, 0.18) 100%),
+      repeating-linear-gradient(
+        90deg,
+        transparent 0,
+        transparent 38px,
+        rgba(0, 240, 255, 0.55) 38px,
+        rgba(0, 240, 255, 0.55) 40px
+      ),
+      repeating-linear-gradient(
+        0deg,
+        transparent 0,
+        transparent 24px,
+        rgba(255, 0, 200, 0.45) 24px,
+        rgba(255, 0, 200, 0.45) 26px
+      );
+    transform: perspective(400px) rotateX(60deg);
+    transform-origin: 50% 0;
+    opacity: 0.7;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  body.era-80s .resume,
+  body.era-80s .resume * {
+    color: #fce8ff;
+    font-family: 'Courier New', Courier, monospace;
+  }
+
+  body.era-80s .resume {
+    position: relative;
+    z-index: 1;
+  }
+
+  body.era-80s .resume-name {
+    font-family: Georgia, 'Times New Roman', serif;
+    font-style: italic;
+    background: linear-gradient(180deg, #ffffff 0%, #ff00cc 50%, #6a0099 100%);
+    -webkit-background-clip: text;
+            background-clip: text;
+    color: transparent;
+    text-shadow: none;
+    letter-spacing: 0.04em;
+  }
+
+  body.era-80s .resume-section-title {
+    color: #00f0ff;
+    border-bottom-color: rgba(0, 240, 255, 0.6);
+    text-shadow: 0 0 6px rgba(0, 240, 255, 0.7);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  body.era-80s .resume-role-header {
+    color: #ff66e0;
+    text-shadow: 0 0 4px rgba(255, 102, 224, 0.5);
+  }
+
+  body.era-80s .resume a {
+    color: #00f0ff;
+    text-decoration: underline;
+  }
+
+  body.era-80s ::selection {
+    background-color: #ff00cc;
+    color: #1a0033;
+  }
+
+  body.era-80s .era-top-banner {
+    background: linear-gradient(180deg, #ff00cc 0%, #6a0099 100%);
+    color: #fff;
+    border-bottom: 2px solid #00f0ff;
+    text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.4);
+    font-family: Georgia, serif;
+  }
+
+  body.era-80s .era-bottom-banner {
+    background: linear-gradient(180deg, #6a0099 0%, #1a0033 100%);
+    color: #00f0ff;
+    border-top: 1px solid rgba(0, 240, 255, 0.5);
+    font-family: 'Courier New', monospace;
+  }
+
+  body.era-80s .era-marquee {
+    background: #000;
+    border-top: 2px solid #ff00cc;
+  }
+  body.era-80s .era-marquee > span {
+    font-family: 'Courier New', monospace;
+    color: #00f0ff;
+    text-shadow: 0 0 4px rgba(0, 240, 255, 0.8);
+  }
+
+  /* ---------- /80s ---------- */
+
+  /* ---------- 60s CIA classified file ----------
+     Manila folder warmth, typewriter font, red CLASSIFIED stamp, redacted
+     bars where dates used to be. The redaction itself comes from the JS
+     transform (replaces years with █ blocks); CSS just sets the mood. */
+
+  body.era-60s {
+    background:
+      repeating-linear-gradient(
+        135deg,
+        rgba(0, 0, 0, 0.025) 0px,
+        rgba(0, 0, 0, 0.025) 1px,
+        transparent 1px,
+        transparent 4px
+      ),
+      #e8d8a8;
+    color: #2a2218;
+  }
+
+  body.era-60s .resume,
+  body.era-60s .resume * {
+    color: #2a2218;
+    font-family: 'Courier New', Courier, monospace;
+    font-feature-settings: normal;
+  }
+
+  body.era-60s .resume-name {
+    color: #2a2218;
+    font-weight: bold;
+    letter-spacing: 0.18em;
+  }
+
+  body.era-60s .resume-section-title {
+    color: #2a2218;
+    border-bottom-color: #2a2218;
+    border-bottom-style: dashed;
+    border-bottom-width: 2px;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+  }
+
+  body.era-60s .resume-role-header {
+    color: #2a2218;
+    text-decoration: underline;
+  }
+
+  body.era-60s .resume a {
+    color: #2a2218;
+    text-decoration: underline;
+  }
+
+  /* Redacted bars — the JS transform inserts █ chars; we tighten the spacing
+     so they read as solid black bars. */
+  body.era-60s .resume-meta {
+    font-family: 'Courier New', monospace;
+    letter-spacing: -0.05em;
+    color: #000;
+  }
+
+  body.era-60s ::selection {
+    background-color: #c41e1e;
+    color: #fff;
+  }
+
+  body.era-60s .era-top-banner {
+    background: #c41e1e;
+    color: #fff8e8;
+    border-bottom: 2px solid #2a2218;
+    text-transform: uppercase;
+  }
+
+  body.era-60s .era-bottom-banner {
+    background: #2a2218;
+    color: #e8d8a8;
+    border-top: 1px solid #c41e1e;
+    font-family: 'Courier New', monospace;
+  }
+
+  body.era-60s .era-marquee {
+    background: #2a2218;
+    border-top: 2px solid #c41e1e;
+  }
+  body.era-60s .era-marquee > span {
+    font-family: 'Courier New', monospace;
+    color: #e8d8a8;
+    letter-spacing: 0.08em;
+  }
+
+  /* ---------- /60s ---------- */
+
+  /* ---------- Wild West wanted poster ----------
+     Aged-parchment background, decorative serif (heavy + spaced), terracotta
+     section dividers. */
+
+  body.era-west {
+    background:
+      radial-gradient(circle at 20% 30%, rgba(120, 70, 20, 0.12) 0%, transparent 50%),
+      radial-gradient(circle at 80% 70%, rgba(140, 90, 30, 0.10) 0%, transparent 50%),
+      #f0dfb8;
+    color: #3a2412;
+  }
+
+  body.era-west .resume,
+  body.era-west .resume * {
+    color: #3a2412;
+    font-family: Georgia, 'Times New Roman', serif;
+    font-feature-settings: normal;
+  }
+
+  body.era-west .resume-name {
+    color: #3a2412;
+    font-weight: bold;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    text-shadow: 1px 1px 0 rgba(255, 240, 200, 0.6);
+  }
+
+  body.era-west .resume-section-title {
+    color: #5a2810;
+    border-bottom-color: #5a2810;
+    border-bottom-style: double;
+    border-bottom-width: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    font-weight: bold;
+  }
+
+  body.era-west .resume-role-header {
+    color: #5a2810;
+    font-weight: bold;
+    letter-spacing: 0.06em;
+  }
+
+  body.era-west .resume-meta {
+    font-style: italic;
+    color: #5a2810;
+  }
+
+  body.era-west .resume a {
+    color: #5a2810;
+    text-decoration: underline;
+  }
+
+  body.era-west ::selection {
+    background-color: #5a2810;
+    color: #f0dfb8;
+  }
+
+  body.era-west .era-top-banner {
+    background: #f0dfb8;
+    color: #3a2412;
+    border-bottom: 4px double #3a2412;
+    border-top: 4px double #3a2412;
+    font-family: Georgia, serif;
+    text-transform: uppercase;
+    letter-spacing: 0.32em;
+    font-size: 14px;
+  }
+
+  body.era-west .era-bottom-banner {
+    background: #3a2412;
+    color: #f0dfb8;
+    border-top: 1px solid #5a2810;
+    font-family: Georgia, serif;
+    font-style: italic;
+    letter-spacing: 0.18em;
+  }
+
+  body.era-west .era-marquee {
+    background: #5a2810;
+    border-top: 2px solid #3a2412;
+  }
+  body.era-west .era-marquee > span {
+    font-family: Georgia, serif;
+    color: #f0dfb8;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  /* ---------- /Wild West ---------- */
+
+  /* ---------- Dinosaur-era cave wall ----------
+     Ochre and rust on a rough tan ground. Chunky, high-contrast type that
+     reads as "primitive" without being cute about it. Dates morph to
+     geological era names via JS. */
+
+  body.era-dino {
+    background:
+      radial-gradient(ellipse at 30% 20%, rgba(200, 100, 40, 0.15) 0%, transparent 55%),
+      radial-gradient(ellipse at 70% 80%, rgba(80, 40, 20, 0.20) 0%, transparent 55%),
+      repeating-linear-gradient(
+        47deg,
+        rgba(70, 35, 15, 0.04) 0px,
+        rgba(70, 35, 15, 0.04) 2px,
+        transparent 2px,
+        transparent 7px
+      ),
+      #c98e5a;
+    color: #3a1a08;
+  }
+
+  body.era-dino .resume,
+  body.era-dino .resume * {
+    color: #3a1a08;
+    font-family: 'Impact', 'Arial Black', sans-serif;
+    font-feature-settings: normal;
+    letter-spacing: 0.04em;
+  }
+
+  body.era-dino .resume-name {
+    color: #c41a08;
+    font-weight: 900;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    text-shadow:
+      2px 2px 0 #3a1a08,
+      -1px -1px 0 #3a1a08;
+  }
+
+  body.era-dino .resume-section-title {
+    color: #c41a08;
+    border-bottom-color: #3a1a08;
+    border-bottom-style: solid;
+    border-bottom-width: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+  }
+
+  body.era-dino .resume-role-header {
+    color: #c41a08;
+    text-transform: uppercase;
+  }
+
+  body.era-dino .resume-meta {
+    color: #3a1a08;
+    font-weight: bold;
+    text-transform: uppercase;
+  }
+
+  body.era-dino .resume a {
+    color: #c41a08;
+    text-decoration: underline;
+  }
+
+  body.era-dino ::selection {
+    background-color: #c41a08;
+    color: #f5d8a8;
+  }
+
+  body.era-dino .era-top-banner {
+    background: #3a1a08;
+    color: #c98e5a;
+    border-bottom: 3px solid #c41a08;
+    text-transform: uppercase;
+    letter-spacing: 0.28em;
+    font-family: 'Impact', 'Arial Black', sans-serif;
+  }
+
+  body.era-dino .era-bottom-banner {
+    background: #c41a08;
+    color: #3a1a08;
+    border-top: 2px solid #3a1a08;
+    text-transform: uppercase;
+    letter-spacing: 0.22em;
+    font-family: 'Impact', 'Arial Black', sans-serif;
+  }
+
+  body.era-dino .era-marquee {
+    background: #3a1a08;
+    border-top: 3px solid #c41a08;
+  }
+  body.era-dino .era-marquee > span {
+    font-family: 'Impact', 'Arial Black', sans-serif;
+    color: #c98e5a;
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+  }
+
+  /* ---------- /Dinosaur ---------- */
+
+  /* ---------- Idle-discovery hint ----------
+     Soft amber pulse that draws attention to an interactive trigger the user
+     hasn't found yet. Uses text-shadow so inline triggers (year ranges, role
+     word, company name) glow without nudging surrounding layout. */
+  @keyframes hint-pulse {
+    0%, 100% {
+      text-shadow: 0 0 0 rgba(251, 191, 36, 0);
+      color: inherit;
+    }
+    50% {
+      text-shadow:
+        0 0 6px rgba(255, 220, 120, 1),
+        0 0 14px rgba(251, 191, 36, 0.85),
+        0 0 28px rgba(251, 146, 60, 0.65);
+      color: #b45309;
+    }
+  }
+
+  @media (prefers-color-scheme: dark) {
+    @keyframes hint-pulse {
+      0%, 100% {
+        text-shadow: 0 0 0 rgba(251, 191, 36, 0);
+        color: inherit;
+      }
+      50% {
+        text-shadow:
+          0 0 6px rgba(255, 230, 150, 1),
+          0 0 16px rgba(251, 191, 36, 0.9),
+          0 0 32px rgba(251, 146, 60, 0.7);
+        color: #fde68a;
+      }
+    }
+  }
+
+  .is-hinting {
+    animation: hint-pulse 1.1s ease-in-out 3;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .is-hinting {
+      animation: none;
+    }
+  }
+  /* ---------- /Idle-discovery hint ---------- */
 
   @media (prefers-color-scheme: dark) {
     .skills-puff {
