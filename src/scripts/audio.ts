@@ -180,6 +180,180 @@ export function playAngelicChime() {
   });
 }
 
+export function playPaperWhoosh() {
+  const ctx = readyCtx();
+  if (!ctx) return;
+
+  const now = ctx.currentTime;
+  const dur = 0.34;
+
+  // Shaped white noise — bandpass swept upward then down for a "fwip" of
+  // paper catching air. Quiet (papers aren't loud).
+  const buffer = ctx.createBuffer(1, Math.floor(ctx.sampleRate * dur), ctx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < data.length; i++) {
+    const t = i / data.length;
+    const env = Math.sin(t * Math.PI);
+    data[i] = (Math.random() * 2 - 1) * env;
+  }
+  const src = ctx.createBufferSource();
+  src.buffer = buffer;
+
+  const filter = ctx.createBiquadFilter();
+  filter.type = 'bandpass';
+  filter.frequency.setValueAtTime(900, now);
+  filter.frequency.linearRampToValueAtTime(2400, now + 0.14);
+  filter.frequency.linearRampToValueAtTime(1200, now + dur);
+  filter.Q.value = 0.9;
+
+  const gain = ctx.createGain();
+  gain.gain.setValueAtTime(0, now);
+  gain.gain.linearRampToValueAtTime(0.06, now + 0.04);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+
+  src.connect(filter).connect(gain).connect(ctx.destination);
+  src.start(now);
+  src.stop(now + dur + 0.02);
+}
+
+export function playPaperPat(pitchJitter = 0) {
+  const ctx = readyCtx();
+  if (!ctx) return;
+
+  const now = ctx.currentTime;
+  const dur = 0.09;
+
+  // Soft thump — low triangle dip + a brief noise tap. The "pat" of papers
+  // landing on the pile.
+  const osc = ctx.createOscillator();
+  osc.type = 'triangle';
+  const basePitch = 180 + pitchJitter * 30;
+  osc.frequency.setValueAtTime(basePitch, now);
+  osc.frequency.exponentialRampToValueAtTime(basePitch * 0.55, now + dur);
+
+  const oscFilter = ctx.createBiquadFilter();
+  oscFilter.type = 'lowpass';
+  oscFilter.frequency.value = 800;
+
+  const oscGain = ctx.createGain();
+  oscGain.gain.setValueAtTime(0, now);
+  oscGain.gain.linearRampToValueAtTime(0.08, now + 0.004);
+  oscGain.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+
+  osc.connect(oscFilter).connect(oscGain).connect(ctx.destination);
+  osc.start(now);
+  osc.stop(now + dur + 0.02);
+
+  // Tiny noise transient for the paper rustle.
+  const noiseDur = 0.05;
+  const buffer = ctx.createBuffer(1, Math.floor(ctx.sampleRate * noiseDur), ctx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < data.length; i++) {
+    data[i] = (Math.random() * 2 - 1) * (1 - i / data.length);
+  }
+  const noise = ctx.createBufferSource();
+  noise.buffer = buffer;
+  const noiseFilter = ctx.createBiquadFilter();
+  noiseFilter.type = 'highpass';
+  noiseFilter.frequency.value = 1800;
+  const noiseGain = ctx.createGain();
+  noiseGain.gain.setValueAtTime(0.05, now);
+  noiseGain.gain.exponentialRampToValueAtTime(0.0001, now + noiseDur);
+
+  noise.connect(noiseFilter).connect(noiseGain).connect(ctx.destination);
+  noise.start(now);
+  noise.stop(now + noiseDur);
+}
+
+export function playStackTap() {
+  const ctx = readyCtx();
+  if (!ctx) return;
+
+  const now = ctx.currentTime;
+  // Two quick high taps — squaring the stack, like a librarian.
+  const taps = [0, 0.085];
+  taps.forEach((delay) => {
+    const start = now + delay;
+    const dur = 0.045;
+
+    const buffer = ctx.createBuffer(1, Math.floor(ctx.sampleRate * dur), ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < data.length; i++) {
+      data[i] = (Math.random() * 2 - 1) * (1 - i / data.length);
+    }
+    const noise = ctx.createBufferSource();
+    noise.buffer = buffer;
+
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.value = 2600;
+    filter.Q.value = 1.6;
+
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.085, start);
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + dur);
+
+    noise.connect(filter).connect(gain).connect(ctx.destination);
+    noise.start(start);
+    noise.stop(start + dur);
+  });
+}
+
+export function playTimeWarp() {
+  const ctx = readyCtx();
+  if (!ctx) return;
+
+  const now = ctx.currentTime;
+  const dur = 0.34;
+
+  // Descending sawtooth sweep — the "whoom" of a tape rewinding past you.
+  // High Q on the lowpass gives the swept sound its watery resonance.
+  const osc = ctx.createOscillator();
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(1500, now);
+  osc.frequency.exponentialRampToValueAtTime(140, now + dur);
+
+  const filter = ctx.createBiquadFilter();
+  filter.type = 'lowpass';
+  filter.frequency.setValueAtTime(2400, now);
+  filter.frequency.exponentialRampToValueAtTime(600, now + dur);
+  filter.Q.value = 5;
+
+  const gain = ctx.createGain();
+  gain.gain.setValueAtTime(0, now);
+  gain.gain.linearRampToValueAtTime(0.05, now + 0.02);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+
+  osc.connect(filter).connect(gain).connect(ctx.destination);
+  osc.start(now);
+  osc.stop(now + dur + 0.02);
+
+  // VHS-tape hiss layered underneath, bandpass sweeping the same direction.
+  const noiseDur = dur;
+  const buffer = ctx.createBuffer(1, Math.floor(ctx.sampleRate * noiseDur), ctx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < data.length; i++) {
+    data[i] = Math.random() * 2 - 1;
+  }
+  const noise = ctx.createBufferSource();
+  noise.buffer = buffer;
+
+  const noiseFilter = ctx.createBiquadFilter();
+  noiseFilter.type = 'bandpass';
+  noiseFilter.frequency.setValueAtTime(2600, now);
+  noiseFilter.frequency.exponentialRampToValueAtTime(800, now + noiseDur);
+  noiseFilter.Q.value = 1.6;
+
+  const noiseGain = ctx.createGain();
+  noiseGain.gain.setValueAtTime(0, now);
+  noiseGain.gain.linearRampToValueAtTime(0.035, now + 0.03);
+  noiseGain.gain.exponentialRampToValueAtTime(0.0001, now + noiseDur);
+
+  noise.connect(noiseFilter).connect(noiseGain).connect(ctx.destination);
+  noise.start(now);
+  noise.stop(now + noiseDur);
+}
+
 export function playRoleTick(pitch: number) {
   const ctx = readyCtx();
   if (!ctx) return;

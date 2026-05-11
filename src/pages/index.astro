@@ -52,10 +52,20 @@ import { contact, skills, experience, education } from '../data/profile';
 
       {
         experience.map((role) => (
-          <article class="mt-4 first:mt-3">
+          <article
+            class:list={[
+              'mt-4 first:mt-3',
+              role.company === 'Greenhouse Software' && 'greenhouse-stage',
+            ]}
+          >
             <div class="flex flex-wrap items-baseline justify-between gap-x-3">
               <h3 class="resume-role-header">
-                {role.company} <span class="font-normal text-slate-500">|</span>{' '}
+                {role.company === 'Greenhouse Software' ? (
+                  <span class="greenhouse-trigger">{role.company}</span>
+                ) : (
+                  role.company
+                )}{' '}
+                <span class="font-normal text-slate-500">|</span>{' '}
                 <span class="font-normal">{role.location}</span>
               </h3>
             </div>
@@ -82,6 +92,12 @@ import { contact, skills, experience, education } from '../data/profile';
                 ))}
               </ul>
             )}
+            {role.company === 'Greenhouse Software' && (
+              <>
+                <div class="greenhouse-avatar" aria-hidden="true" />
+                <div class="greenhouse-pile" aria-hidden="true" />
+              </>
+            )}
           </article>
         ))
       }
@@ -101,8 +117,12 @@ import { contact, skills, experience, education } from '../data/profile';
   import { initSkillsCascade } from '../scripts/skills-cascade';
   import { initNameReveal } from '../scripts/name-reveal';
   import { initRoleCycle } from '../scripts/role-cycle';
+  import { initGreenhouseCascade } from '../scripts/greenhouse-cascade';
+  import { initTimeWarp } from '../scripts/time-warp';
 
   initSkillsCascade();
   initNameReveal();
   initRoleCycle();
+  initGreenhouseCascade();
+  initTimeWarp();
 </script>

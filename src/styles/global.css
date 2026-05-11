@@ -179,6 +179,7 @@
   .role-cycle-word {
     display: inline-block;
     position: relative;
+    isolation: isolate;
   }
 
   .role-cycle-overlay {
@@ -217,6 +218,22 @@
     .role-cycle-overlay.is-flicker {
       animation: none;
     }
+  }
+
+  /* Hat-confetti burst. Each hat is absolutely positioned at the word's center
+     and animated via Web Animations API in role-cycle.ts. Pixel-art rendering
+     keeps the sprite crisp when scaled. */
+  .role-cycle-hat {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 56px;
+    height: 56px;
+    pointer-events: none;
+    image-rendering: pixelated;
+    will-change: transform, opacity;
+    transform: translate(-50%, -50%);
+    z-index: -1;
   }
 
   .resume-meta {
@@ -614,6 +631,419 @@
   }
 
   /* ---------- /Portal arrival animation ---------- */
+
+  /* ---------- Greenhouse cascade (ATS Easter egg) ---------- */
+  /* Click "Greenhouse Software" → resume papers erupt upward, drift down,
+     Tim arrives and stacks them into a neat pile. Mirrors the skills-cascade
+     pattern: arrival → core (catch-and-stack) → exit, with the core's
+     impact frames driving paper-snap-to-pile. */
+
+  .greenhouse-stage {
+    position: relative;
+  }
+
+  .greenhouse-trigger {
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .greenhouse-avatar {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    width: 192px;
+    height: 192px;
+    background-image: var(--sprite-url, none);
+    background-size: 960px 960px;
+    background-position: 0 0;
+    background-repeat: no-repeat;
+    image-rendering: pixelated;
+    pointer-events: none;
+    opacity: 0;
+    z-index: 25;
+    --anim-duration: 1s;
+    --anim-row-duration: 0.2s;
+  }
+
+  @media (max-width: 900px) {
+    .greenhouse-avatar {
+      right: 0;
+      bottom: -212px;
+    }
+  }
+
+  /* Pile sits where the in-sprite pile is painted (center-bottom of the
+     192px avatar slot, slightly forward of Tim's feet) so the DOM pile and
+     the painted pile read as the same object. Persists past frame 25
+     (where the painted pile vanishes) to carry visual continuity into the
+     exit + fade. */
+  .greenhouse-pile {
+    position: absolute;
+    right: 70px;
+    bottom: 14px;
+    width: 50px;
+    height: 70px;
+    pointer-events: none;
+    z-index: 24;
+  }
+
+  @media (max-width: 900px) {
+    .greenhouse-pile {
+      right: 70px;
+      bottom: -198px;
+    }
+  }
+
+  /* Reuse the skills-avatar phase machine — same sprite-grid math, same
+     arrival/core/exit phase classes, scoped under a different selector. */
+  .greenhouse-avatar.is-arriving,
+  .greenhouse-avatar.is-coring,
+  .greenhouse-avatar.is-exiting {
+    opacity: 1;
+    animation:
+      greenhouse-avatar-x var(--anim-row-duration) steps(5, jump-none) 5 forwards,
+      greenhouse-avatar-y var(--anim-duration) steps(5, jump-none) 1 forwards;
+  }
+
+  .greenhouse-avatar.is-arrival-held,
+  .greenhouse-avatar.is-core-held {
+    opacity: 1;
+    background-position: -768px -768px;
+  }
+
+  .greenhouse-avatar.is-fading {
+    transition: opacity 0.42s ease-out;
+    opacity: 0;
+  }
+
+  @keyframes greenhouse-avatar-x {
+    from { background-position-x: 0; }
+    to { background-position-x: -768px; }
+  }
+
+  @keyframes greenhouse-avatar-y {
+    from { background-position-y: 0; }
+    to { background-position-y: -768px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .greenhouse-avatar.is-arriving,
+    .greenhouse-avatar.is-coring,
+    .greenhouse-avatar.is-exiting {
+      animation: none;
+      background-position: -768px -768px;
+    }
+  }
+
+  /* Resume paper sprite — small white rect with thin gray "text" lines.
+     Lives in document.body during flight (position: fixed) so it can fly
+     anywhere on screen, then transferred into .greenhouse-pile (position:
+     absolute, .is-stacked) once caught so it can fade with the pile. */
+  .greenhouse-paper {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 22px;
+    height: 30px;
+    background-color: #fafafa;
+    border: 1px solid #c7c7d1;
+    border-radius: 1px;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+    background-image:
+      linear-gradient(to bottom, transparent 4px, #b8b8c2 4px, #b8b8c2 5px, transparent 5px),
+      linear-gradient(to bottom, transparent 9px, #d4d4dc 9px, #d4d4dc 10px, transparent 10px),
+      linear-gradient(to bottom, transparent 14px, #d4d4dc 14px, #d4d4dc 15px, transparent 15px),
+      linear-gradient(to bottom, transparent 19px, #d4d4dc 19px, #d4d4dc 20px, transparent 20px),
+      linear-gradient(to bottom, transparent 24px, #d4d4dc 24px, #d4d4dc 25px, transparent 25px);
+    pointer-events: none;
+    z-index: 9998;
+    will-change: transform, opacity;
+  }
+
+  /* Three minor variants — different fake "header" position so the resumes
+     read as a stack of slightly different documents, not photocopies. */
+  .greenhouse-paper--variant-b {
+    background-image:
+      linear-gradient(to bottom, transparent 5px, #a8a8b4 5px, #a8a8b4 7px, transparent 7px),
+      linear-gradient(to bottom, transparent 11px, #d4d4dc 11px, #d4d4dc 12px, transparent 12px),
+      linear-gradient(to bottom, transparent 16px, #d4d4dc 16px, #d4d4dc 17px, transparent 17px),
+      linear-gradient(to bottom, transparent 21px, #d4d4dc 21px, #d4d4dc 22px, transparent 22px);
+  }
+
+  .greenhouse-paper--variant-c {
+    background-image:
+      linear-gradient(to bottom, transparent 3px, #b8b8c2 3px, #b8b8c2 4px, transparent 4px),
+      linear-gradient(to bottom, transparent 7px, #b8b8c2 7px, #b8b8c2 8px, transparent 8px),
+      linear-gradient(to bottom, transparent 13px, #d4d4dc 13px, #d4d4dc 14px, transparent 14px),
+      linear-gradient(to bottom, transparent 18px, #d4d4dc 18px, #d4d4dc 19px, transparent 19px),
+      linear-gradient(to bottom, transparent 23px, #d4d4dc 23px, #d4d4dc 24px, transparent 24px);
+  }
+
+  /* Stacked papers live inside .greenhouse-pile (position: absolute, not
+     fixed). Drop the fixed position so the pile-relative transform takes
+     over. */
+  .greenhouse-paper.is-stacked {
+    position: absolute;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    .greenhouse-paper {
+      background-color: #e8e8ee;
+      border-color: #6d6d7a;
+    }
+  }
+
+  /* ---------- /Greenhouse cascade ---------- */
+
+  /* ---------- 90s time-warp ---------- */
+  /* Click a date → CRT flash → page reskins to Netscape grey + Times, every
+     year on the page shifts back 30. Click again to return. .resume-meta is
+     the click target; .is-time-warping plays the entry/exit flash; .era-90s
+     swaps the theme. Theme flip lands during the dark trough of the flash. */
+
+  .resume-meta {
+    cursor: pointer;
+    user-select: none;
+  }
+
+  body.is-time-warping {
+    animation: time-warp-flash 0.5s ease-out;
+  }
+
+  @keyframes time-warp-flash {
+    0%   { filter: none; }
+    14%  { filter: brightness(2.4) saturate(1.5) blur(0.6px) hue-rotate(45deg); }
+    28%  { filter: brightness(0.08) saturate(0); }
+    42%  { filter: brightness(1.7) hue-rotate(-90deg); }
+    65%  { filter: brightness(0.55); }
+    100% { filter: none; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    body.is-time-warping {
+      animation: none;
+    }
+  }
+
+  /* Reskin — cast a wide net so utility-class colors (text-slate-*, etc.) and
+     dark-mode variants are all overridden. body.era-90s .resume * beats any
+     single-class utility on specificity (0,2,0 vs 0,1,0). */
+  body.era-90s {
+    background: #c0c0c0;
+  }
+
+  body.era-90s .resume,
+  body.era-90s .resume * {
+    color: #000;
+    font-family: 'Times New Roman', Times, serif;
+    font-feature-settings: normal;
+  }
+
+  body.era-90s .resume a {
+    color: #0000ee;
+    text-decoration: underline;
+  }
+  body.era-90s .resume a:visited {
+    color: #551a8b;
+  }
+  body.era-90s .resume a:hover,
+  body.era-90s .resume a:active {
+    color: #ee0000;
+  }
+
+  body.era-90s ::selection {
+    background-color: #000080;
+    color: #fff;
+  }
+
+  /* Chiseled groove under section titles — classic Win95 separator. */
+  body.era-90s .resume-section-title {
+    border-bottom-color: #808080;
+    border-bottom-style: ridge;
+    border-bottom-width: 3px;
+  }
+
+  /* Header blinks in 90s mode — classic <blink> via visibility (harsh swap,
+     no fade). Slowed to 1.4s so the name is readable most of the cycle. */
+  body.era-90s .resume-name {
+    animation: era-90s-blink 1.4s infinite;
+  }
+
+  @keyframes era-90s-blink {
+    0%, 65%   { visibility: visible; }
+    66%, 100% { visibility: hidden; }
+  }
+
+  /* "Under Construction" caution-tape divider. Sits between the resume body
+     and the webring buttons; injected by JS, shown only in 90s mode. */
+  .era-90s-construction {
+    display: none;
+  }
+
+  body.era-90s .era-90s-construction {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 36px auto 0;
+    max-width: 720px;
+    height: 28px;
+    background: repeating-linear-gradient(
+      -45deg,
+      #ffd400 0,
+      #ffd400 14px,
+      #1a1a1a 14px,
+      #1a1a1a 28px
+    );
+    border-top: 1px solid #000;
+    border-bottom: 1px solid #000;
+  }
+
+  body.era-90s .era-90s-construction > span {
+    background: #ffd400;
+    border: 1px solid #000;
+    padding: 1px 14px;
+    font-family: 'MS Sans Serif', Arial, Helvetica, sans-serif;
+    font-size: 12px;
+    font-weight: bold;
+    letter-spacing: 0.12em;
+    color: #000;
+    text-shadow: 1px 1px 0 rgba(255, 255, 255, 0.6);
+  }
+
+  /* Webring 88×31 buttons — the classic "Best viewed in" badges. JS injects
+     the container at body end (after the construction bar); CSS shows it
+     in 90s mode. Buttons are inert decoration (pointer-events: none) so
+     they don't intercept clicks meant for dates beneath them. */
+  .era-90s-buttons {
+    display: none;
+  }
+
+  body.era-90s .era-90s-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+    margin: 16px auto 24px;
+    padding: 0 16px;
+    max-width: 720px;
+  }
+
+  body.era-90s .era-90s-button {
+    width: 88px;
+    height: 31px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    font-family: 'MS Sans Serif', Arial, Helvetica, sans-serif;
+    font-size: 9px;
+    line-height: 1.05;
+    font-weight: bold;
+    text-align: center;
+    letter-spacing: 0.04em;
+    color: #fff;
+    pointer-events: none;
+    /* Outset bevel — light top-left, dark bottom-right. */
+    border-top: 1px solid #f0f0f0;
+    border-left: 1px solid #f0f0f0;
+    border-right: 1px solid #000;
+    border-bottom: 1px solid #000;
+    box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.25);
+  }
+
+  body.era-90s .era-90s-button-title {
+    font-size: 11px;
+    letter-spacing: 0.06em;
+  }
+
+  body.era-90s .era-90s-button-sub {
+    font-size: 8px;
+    letter-spacing: 0.08em;
+    opacity: 0.92;
+  }
+
+  /* Image-backed buttons — bevel is already painted into the bitmap, so drop
+     the CSS border/shadow to avoid double-beveling. */
+  body.era-90s .era-90s-button--netscape,
+  body.era-90s .era-90s-button--ie {
+    border: none;
+    box-shadow: none;
+    background-repeat: no-repeat;
+    background-size: 100% 100%;
+    image-rendering: pixelated;
+  }
+  body.era-90s .era-90s-button--netscape {
+    background-image: url('/buttons-90s/netscape-now.png');
+  }
+  body.era-90s .era-90s-button--ie {
+    background-image: url('/buttons-90s/internet-explorer.png');
+  }
+  body.era-90s .era-90s-button--html {
+    background: linear-gradient(180deg, #d0b020 0%, #7a6010 100%);
+    color: #000;
+  }
+  body.era-90s .era-90s-button--res {
+    background: linear-gradient(180deg, #6b2a8a 0%, #2a0a3e 100%);
+    color: #fff;
+  }
+
+  /* Scrolling status bar at the viewport bottom — the <marquee> homage. JS
+     injects the wrapper once; CSS hides it unless body.era-90s is on. Body
+     gets padding-bottom in 90s mode so the bar never covers resume content. */
+  .era-90s-marquee {
+    display: none;
+  }
+
+  body.era-90s {
+    padding-bottom: 26px;
+  }
+
+  body.era-90s .era-90s-marquee {
+    display: block;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 24px;
+    z-index: 100;
+    overflow: hidden;
+    background: #000080;
+    border-top: 2px solid #ffffff;
+    pointer-events: none;
+  }
+
+  body.era-90s .era-90s-marquee > span {
+    display: inline-block;
+    position: absolute;
+    left: 100%;
+    top: 3px;
+    white-space: nowrap;
+    font-family: 'Times New Roman', Times, serif;
+    font-size: 13px;
+    font-weight: bold;
+    color: #ffff00;
+    animation: era-90s-marquee-scroll 22s linear infinite;
+    will-change: transform;
+  }
+
+  @keyframes era-90s-marquee-scroll {
+    from { transform: translateX(0); }
+    to   { transform: translateX(calc(-100vw - 100%)); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    body.era-90s .resume-name {
+      animation: none;
+    }
+    body.era-90s .era-90s-marquee {
+      display: none;
+    }
+    body.era-90s {
+      padding-bottom: 0;
+    }
+  }
+
+  /* ---------- /90s time-warp ---------- */
 
   @media (prefers-color-scheme: dark) {
     .skills-puff {

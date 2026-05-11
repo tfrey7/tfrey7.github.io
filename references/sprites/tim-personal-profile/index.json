@@ -120,7 +120,7 @@
       "frameCount": 25,
       "columns": 5,
       "lastFramePoseId": "cmoyxwhrb003mpweo0lws0877",
-      "note": "Strong execution. Red+white parachute clearly visible above Tim with arms wide for most descent frames; chute deflates beside him as he lands; final frames he stands in Original pose. Clear 'skydive landing' read.",
+      "note": "Strong execution. Red+white parachute clearly visible above Tim with arms wide for most descent frames; chute deflates beside him as he lands; final frames he stands in Original pose. Clear 'skydive landing' read. Sheet has been post-processed: pixels with low saturation (max-min < 18) and brightness in [120,220] were keyed to alpha=0 to remove the model's flat-gray chute fabric and reveal the parachute risers (wires) — without this pass the gray fill was inconsistent across frames (transparent in some, opaque in others). Source video unchanged; rerun the keying recipe (PIL sat<18 & 120<=max<=220 → alpha=0) if regenerating.",
       "files": {
         "sheet": "skydive-chute-arrival.png",
         "atlas": "skydive-chute-arrival.atlas.json"
