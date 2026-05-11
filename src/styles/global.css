@@ -779,6 +779,55 @@
     background-image: url('/sprites/papers/resume-feather.png');
   }
 
+  /* Digitization beat. After Tim taps the keyboard, each landed paper lifts
+     a few pixels, flashes white-hot, then is removed by JS and replaced with
+     a small burst of .greenhouse-pixel shards that stream into the RESUMES
+     slot. The lift+flash is the "tractor beam grabs it" moment. Filter is
+     pinned to the .is-digitizing state so the underlying transform set every
+     tick by physicsTick (or last-set sweep transform) is preserved. */
+  .greenhouse-paper.is-digitizing {
+    animation: gh-paper-digitize 220ms ease-out forwards;
+  }
+  @keyframes gh-paper-digitize {
+    0%   { filter: brightness(1)   drop-shadow(0 0 0 transparent); }
+    60%  { filter: brightness(2.4) drop-shadow(0 0 8px #b6f3df); }
+    100% { filter: brightness(3.6) drop-shadow(0 0 12px #ffffff); opacity: 0; }
+  }
+
+  /* Pixel shard particle. Spawned by digitizePaper at each paper's
+     last-known on-floor position; immediately transitions toward the
+     receptacle slot center via inline --gh-pixel-tx/--ty. Each shard
+     fades and shrinks as it nears the slot — reads as the page's pixels
+     being vacuumed in. */
+  .greenhouse-pixel {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 4px;
+    height: 4px;
+    background: #5bd6b4;
+    box-shadow: 0 0 4px #b6f3df, 0 0 8px rgba(91, 214, 180, 0.6);
+    image-rendering: pixelated;
+    pointer-events: none;
+    z-index: 9999;
+    will-change: transform, opacity;
+    transform: translate(var(--gh-pixel-x, 0), var(--gh-pixel-y, 0))
+               translate(var(--gh-pixel-kick-x, 0), var(--gh-pixel-kick-y, 0))
+               scale(1);
+    opacity: 1;
+    transition:
+      transform 520ms cubic-bezier(0.4, 0.05, 0.7, 0.95),
+      opacity 520ms ease-in;
+  }
+  .greenhouse-pixel.is-flying {
+    transform: translate(var(--gh-pixel-tx), var(--gh-pixel-ty)) scale(0.35);
+    opacity: 0;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .greenhouse-paper.is-digitizing { animation: none; opacity: 0; }
+    .greenhouse-pixel { transition: none; opacity: 0; }
+  }
+
   /* The Greenhouse supercomputer. Idle is a 25-frame AutoSprite spritesheet
      (5x5 grid of 384px frames, 1920x1920 total) generated from the static
      base. Two-axis steps(5) keyframes walk the grid — X cycles through 5
@@ -1782,9 +1831,9 @@
   body.era-dino .resume,
   body.era-dino .resume * {
     color: #3a1a08;
-    font-family: 'Impact', 'Arial Black', sans-serif;
+    font-family: 'Papyrus', 'Papyrus Standard', 'Trattatello', fantasy;
     font-feature-settings: normal;
-    letter-spacing: 0.04em;
+    letter-spacing: 0.02em;
   }
 
   body.era-dino .resume-name {
@@ -1832,8 +1881,8 @@
     color: #3a1a08;
     border-top: 2px solid #3a1a08;
     text-transform: uppercase;
-    letter-spacing: 0.22em;
-    font-family: 'Impact', 'Arial Black', sans-serif;
+    letter-spacing: 0.18em;
+    font-family: 'Papyrus', 'Papyrus Standard', 'Trattatello', fantasy;
   }
 
   body.era-dino .era-marquee {
@@ -1841,10 +1890,10 @@
     border-top: 3px solid #c41a08;
   }
   body.era-dino .era-marquee > span {
-    font-family: 'Impact', 'Arial Black', sans-serif;
+    font-family: 'Papyrus', 'Papyrus Standard', 'Trattatello', fantasy;
     color: #c98e5a;
     text-transform: uppercase;
-    letter-spacing: 0.18em;
+    letter-spacing: 0.14em;
   }
 
   /* Dino scenery — cave-painted silhouettes (palms, volcano, brontosaurus,
@@ -1875,9 +1924,20 @@
     to   { opacity: 1; }
   }
 
-  .era-dino-decor svg {
+  .era-dino-decor svg,
+  .era-dino-decor img {
     position: absolute;
     display: block;
+  }
+
+  /* Distant mountain horizon — full-width ridgeline behind everything. */
+  .era-dino-decor .dino-decor-mountains {
+    left: 0;
+    right: 0;
+    bottom: 22vh;
+    width: 100%;
+    height: 130px;
+    opacity: 0.14;
   }
 
   /* Palms frame the viewport sides. Right palm mirrors the left. */
@@ -1899,18 +1959,79 @@
     transform: scaleX(-1);
   }
 
-  /* Volcano in the lower-right margin. Smoke rises above; lava drips from
-     the crater notch. */
+  /* Volcano in the lower-right margin. PNG cone (Lascaux fresco) with an
+     overlay SVG carrying the animated bits (crater glow, lava bombs, smoke).
+     Wrapper is square to match the PNG. */
   .era-dino-decor .dino-decor-volcano {
-    right: 5vw;
+    position: absolute;
+    right: 3vw;
     bottom: 90px;
-    width: 240px;
-    height: 192px;
-    opacity: 0.6;
+    width: 400px;
+    height: 400px;
+    opacity: 0.55;
   }
-  .era-dino-decor .dino-lava path {
-    fill: #c41a08;
+  .era-dino-decor .dino-decor-volcano .dino-volcano-img,
+  .era-dino-decor .dino-decor-volcano .dino-volcano-fx {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
   }
+
+  /* Crater glow — soft warm pulse visible through the silhouette's V-notch. */
+  .era-dino-decor .dino-crater-glow {
+    fill: #ffa830;
+    filter: blur(6px);
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: dino-crater-pulse 2.4s ease-in-out infinite;
+  }
+
+  @keyframes dino-crater-pulse {
+    0%, 100% { opacity: 0.55; transform: scale(0.92); }
+    50%      { opacity: 0.95; transform: scale(1.15); }
+  }
+
+  /* Lava bombs — three circles ejected on staggered arcs out of the crater.
+     Translate values are SVG user units; viewBox is 400×320. */
+  .era-dino-decor .dino-lava-bombs circle {
+    fill: #ff5410;
+    transform-box: fill-box;
+    transform-origin: center;
+    opacity: 0;
+  }
+  .era-dino-decor .dino-lava-bombs .lb1 {
+    animation: dino-lava-bomb-left 3.2s ease-out infinite;
+  }
+  .era-dino-decor .dino-lava-bombs .lb2 {
+    animation: dino-lava-bomb-up 3.7s ease-out infinite;
+    animation-delay: 1.4s;
+  }
+  .era-dino-decor .dino-lava-bombs .lb3 {
+    animation: dino-lava-bomb-right 2.9s ease-out infinite;
+    animation-delay: 0.7s;
+  }
+
+  @keyframes dino-lava-bomb-left {
+    0%   { transform: translate(0px, 0px); opacity: 0; }
+    8%   { transform: translate(-6px, -12px); opacity: 0.95; }
+    40%  { transform: translate(-32px, -50px); opacity: 0.95; }
+    100% { transform: translate(-90px, 130px); opacity: 0; }
+  }
+  @keyframes dino-lava-bomb-up {
+    0%   { transform: translate(0px, 0px); opacity: 0; }
+    10%  { transform: translate(2px, -14px); opacity: 0.95; }
+    45%  { transform: translate(8px, -72px); opacity: 0.95; }
+    100% { transform: translate(38px, 140px); opacity: 0; }
+  }
+  @keyframes dino-lava-bomb-right {
+    0%   { transform: translate(0px, 0px); opacity: 0; }
+    8%   { transform: translate(8px, -12px); opacity: 0.95; }
+    42%  { transform: translate(44px, -46px); opacity: 0.95; }
+    100% { transform: translate(105px, 130px); opacity: 0; }
+  }
+
   .era-dino-decor .dino-smoke ellipse {
     fill: #3a1a08;
     opacity: 0;
@@ -1927,33 +2048,47 @@
     100% { transform: translateY(-60px) scale(1.25); opacity: 0; }
   }
 
-  /* Brontosaurus painted faintly across the lower viewport — cave-fresco
-     style, sits behind the resume and palms. */
+  /* Brontosaurus fresco — sits behind the resume, lower-center, facing left.
+     Opacity higher than the old SVG because the PNG has its own warmth and
+     pigment texture that gets muddy below ~0.4. */
   .era-dino-decor .dino-decor-bronto {
     left: 50%;
     bottom: 56px;
-    width: min(72vw, 880px);
+    width: min(56vw, 620px);
     height: auto;
     transform: translateX(-50%);
-    opacity: 0.22;
+    opacity: 0.45;
   }
 
-  /* Pterodactyl gliding across the upper sky. */
-  .era-dino-decor .dino-decor-ptero {
-    top: 9vh;
-    left: 18vw;
-    width: 96px;
+  /* Stegosaurus fresco — lower-left, faces right toward the bronto.
+     Smaller than the bronto so the composition reads stego → bronto → volcano
+     left-to-right. */
+  .era-dino-decor .dino-decor-stego {
+    left: 4vw;
+    bottom: 40px;
+    width: min(24vw, 260px);
     height: auto;
-    opacity: 0.55;
+    opacity: 0.4;
+  }
+
+  /* Pterodactyl gliding across the upper sky. PNG has transparent padding,
+     so the visible bird is ~60% of the wrapper width — set width accordingly.
+     Glide arcs downward so he visibly descends into the scene from above. */
+  .era-dino-decor .dino-decor-ptero {
+    top: 4vh;
+    left: 18vw;
+    width: 170px;
+    height: auto;
+    opacity: 0.75;
     animation: dino-ptero-glide 16s ease-in-out infinite;
   }
 
   @keyframes dino-ptero-glide {
-    0%   { transform: translate(0, 0)        rotate(-3deg); }
-    25%  { transform: translate(120px, 14px) rotate(2deg);  }
-    50%  { transform: translate(260px, -6px) rotate(-1deg); }
-    75%  { transform: translate(120px, 16px) rotate(3deg);  }
-    100% { transform: translate(0, 0)        rotate(-3deg); }
+    0%   { transform: translate(0, 0)         rotate(-2deg); }
+    25%  { transform: translate(140px, 60px)  rotate(6deg);  }
+    50%  { transform: translate(280px, 110px) rotate(-1deg); }
+    75%  { transform: translate(140px, 70px)  rotate(5deg);  }
+    100% { transform: translate(0, 0)         rotate(-2deg); }
   }
 
   /* Side margins are too cramped under ~1100px wide — hide palms/volcano so
@@ -1961,7 +2096,8 @@
      stay since they're already behind the content. */
   @media (max-width: 1100px) {
     .era-dino-decor .dino-decor-palm,
-    .era-dino-decor .dino-decor-volcano {
+    .era-dino-decor .dino-decor-volcano,
+    .era-dino-decor .dino-decor-mountains {
       display: none;
     }
   }
@@ -1976,6 +2112,8 @@
     body.era-dino .era-dino-decor { animation: none; }
     .era-dino-decor .dino-smoke ellipse { animation: none; opacity: 0.3; }
     .era-dino-decor .dino-decor-ptero { animation: none; }
+    .era-dino-decor .dino-crater-glow { animation: none; opacity: 0.7; }
+    .era-dino-decor .dino-lava-bombs circle { animation: none; opacity: 0; }
   }
 
   /* ---------- /Dinosaur ---------- */
@@ -2080,16 +2218,15 @@
     bottom: 0;
     transform: translateY(100%);
   }
-
-  /* Lean AWAY from the page content. Negative rotation tilts the head/upper
-     body back toward the offscreen side; for the right-edge peek the sprite
-     is already mirrored via scaleX(-1), so the same negative rotation
-     visually mirrors to a right-tilt away from content. */
+  /* Lean INTO the page content. Positive rotation pivots about the feet so
+     the head tilts toward the content area; for the right-edge peek the
+     sprite is mirrored via scaleX(-1), so the same positive rotation
+     visually mirrors to a left-tilt — also into content. */
   .idle-peek-avatar.is-peek-left.is-peeking {
-    transform: translateX(-68%) rotate(-9deg);
+    transform: translateX(-52%) rotate(14deg);
   }
   .idle-peek-avatar.is-peek-right.is-peeking {
-    transform: translateX(68%) scaleX(-1) rotate(-9deg);
+    transform: translateX(52%) scaleX(-1) rotate(14deg);
   }
   .idle-peek-avatar.is-peek-bottom.is-peeking {
     transform: translateY(58%);
@@ -2124,4 +2261,568 @@
   .location-trigger {
     cursor: pointer;
   }
+
+  /* ---------- Snake easter egg ---------- */
+  /* Self-contained CRT-styled modal. Spawned by openSnake() in
+     scripts/eggs/snake.ts when the (future) keyboard-click trigger fires;
+     for now also reachable via window.__snake() in the console. Black
+     phosphor frame, monochrome green pixel font, fixed-aspect game canvas
+     centered between the score header and controls footer. */
+
+  .snake-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 10000;
+    background: rgba(0, 0, 0, 0.78);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    /* Fade in so it doesn't pop on top of whatever the user was reading. */
+    animation: snake-backdrop-in 180ms ease-out;
+  }
+
+  @keyframes snake-backdrop-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+
+  .snake-modal {
+    /* Old-CRT box: chunky border, slight inner glow, monospaced phosphor
+       text. Width is sized to the canvas + frame padding. */
+    background: #050a05;
+    color: #7dff6b;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    border: 2px solid #1f4a1f;
+    border-radius: 6px;
+    box-shadow:
+      0 0 0 1px #0a1a0a inset,
+      0 0 28px rgba(125, 255, 107, 0.12),
+      0 14px 60px rgba(0, 0, 0, 0.6);
+    padding: 12px;
+    max-width: calc(100vw - 32px);
+    animation: snake-modal-in 220ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  @keyframes snake-modal-in {
+    from { transform: scale(0.92); opacity: 0; }
+    to   { transform: scale(1);    opacity: 1; }
+  }
+
+  .snake-modal-header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 0 4px 10px;
+    border-bottom: 1px dashed #1f4a1f;
+  }
+
+  .snake-title {
+    font-weight: bold;
+    color: #b8ff9e;
+  }
+
+  .snake-score,
+  .snake-hi {
+    color: #7dff6b;
+  }
+
+  .snake-hi {
+    color: #4caf50;
+  }
+
+  .snake-close {
+    margin-left: auto;
+    background: transparent;
+    border: 1px solid #1f4a1f;
+    color: #7dff6b;
+    width: 24px;
+    height: 24px;
+    line-height: 1;
+    font-size: 16px;
+    cursor: pointer;
+    border-radius: 3px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 120ms ease, color 120ms ease;
+  }
+
+  .snake-close:hover {
+    background: #1f4a1f;
+    color: #b8ff9e;
+  }
+
+  .snake-stage {
+    position: relative;
+    margin: 10px 0;
+    /* Subtle scanline overlay for that CRT feel — pure CSS, no animation,
+       so it stays calm and doesn't fight with the game. */
+    background: #050a05;
+  }
+
+  .snake-stage::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(
+      to bottom,
+      rgba(0, 0, 0, 0) 0,
+      rgba(0, 0, 0, 0) 2px,
+      rgba(0, 0, 0, 0.18) 2px,
+      rgba(0, 0, 0, 0.18) 3px
+    );
+    pointer-events: none;
+    mix-blend-mode: multiply;
+  }
+
+  .snake-canvas {
+    display: block;
+    image-rendering: pixelated;
+    background: #050a05;
+  }
+
+  .snake-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    background: rgba(5, 10, 5, 0.78);
+    color: #b8ff9e;
+    text-align: center;
+    padding: 16px;
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  .snake-overlay-title {
+    font-size: 24px;
+    font-weight: bold;
+    letter-spacing: 0.18em;
+    text-shadow: 0 0 10px rgba(125, 255, 107, 0.6);
+  }
+
+  .snake-overlay-score {
+    font-size: 14px;
+    color: #7dff6b;
+  }
+
+  .snake-overlay-hint {
+    font-size: 11px;
+    color: #4caf50;
+    letter-spacing: 0.1em;
+  }
+
+  .snake-modal-footer {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 4px 0;
+    border-top: 1px dashed #1f4a1f;
+    font-size: 11px;
+    color: #4caf50;
+  }
+
+  @media (max-width: 520px) {
+    .snake-modal-footer {
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .snake-modal-backdrop,
+    .snake-modal {
+      animation: none;
+    }
+    .snake-stage::after {
+      display: none;
+    }
+  }
+
+  /* ---------- /Snake easter egg ---------- */
+
+  /* ---------- Journal easter egg (J key) ---------- */
+  /* The "journal" is rendered as an interviewer's clipboard: a tan masonite
+     board with a metal clip up top and a candidate-evaluation form clipped
+     to it. Found items are ticked off ("Greets warmly"); locked items stay
+     redacted with an interviewer-voiced hint ("??? — Have you said hi yet?").
+     Light vs. dark mode swaps to walnut + parchment so the metaphor reads
+     under either system theme. */
+
+  .journal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 10000;
+    background: rgba(5, 5, 15, 0);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    opacity: 0;
+    transition: background 200ms ease, opacity 200ms ease;
+  }
+
+  .journal-backdrop.is-open {
+    background: rgba(5, 5, 15, 0.62);
+    opacity: 1;
+  }
+
+  .journal-backdrop.is-closing {
+    background: rgba(5, 5, 15, 0);
+    opacity: 0;
+  }
+
+  /* The clipboard itself — masonite/tan board with hard edges and a
+     stepped-shadow outline (no border-radius, no smooth gradient). The
+     clip and paper sit inside this. */
+  .journal-panel {
+    position: relative;
+    background: #b58a4e;
+    padding: 38px 18px 22px;
+    min-width: min(420px, calc(100vw - 48px));
+    max-width: min(540px, calc(100vw - 48px));
+    max-height: calc(100vh - 64px);
+    overflow-y: auto;
+    box-shadow:
+      inset 0 0 0 2px #6e4824,
+      inset 0 2px 0 0 rgba(255, 255, 255, 0.15),
+      0 18px 50px rgba(0, 0, 0, 0.5);
+    transform: scale(0.94) translateY(8px);
+    opacity: 0;
+    transition:
+      transform 220ms cubic-bezier(0.34, 1.4, 0.64, 1),
+      opacity 180ms ease;
+  }
+
+  .journal-backdrop.is-open .journal-panel {
+    transform: scale(1) translateY(0);
+    opacity: 1;
+  }
+
+  .journal-backdrop.is-closing .journal-panel {
+    transform: scale(0.96) translateY(6px);
+    opacity: 0;
+    transition:
+      transform 160ms ease,
+      opacity 160ms ease;
+  }
+
+  /* The metal clip across the top of the clipboard. Stepped silver bands
+     give a chunky pixel-art feel; two screws sit at either end. */
+  .journal-clip {
+    position: absolute;
+    top: 6px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 96px;
+    height: 22px;
+    background:
+      linear-gradient(
+        to bottom,
+        #d6d6d6 0%,
+        #d6d6d6 25%,
+        #9a9a9a 26%,
+        #9a9a9a 70%,
+        #6a6a6a 71%,
+        #6a6a6a 100%
+      );
+    box-shadow:
+      inset 0 0 0 2px #3a3a3a,
+      0 2px 0 0 rgba(0, 0, 0, 0.3);
+  }
+
+  .journal-clip::before,
+  .journal-clip::after {
+    content: '';
+    position: absolute;
+    width: 4px;
+    height: 4px;
+    background: #2a2a2a;
+    top: 9px;
+    box-shadow: inset 0 0 0 1px #0a0a0a;
+  }
+  .journal-clip::before { left: 10px; }
+  .journal-clip::after  { right: 10px; }
+
+  /* The sheet of paper clipped to the board. Cream stock, faint blue rule
+     lines, ink-colored text. Line height matches the rule step so text
+     sits on the lines instead of floating between them. Relative so the
+     HIRED stamp anchors to the paper, not the clipboard. */
+  .journal-paper {
+    position: relative;
+    background: #faf4dc;
+    color: #1f1a14;
+    padding: 24px 28px 22px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    background-image: linear-gradient(
+      to bottom,
+      transparent 0,
+      transparent 22px,
+      rgba(70, 110, 180, 0.18) 22px,
+      rgba(70, 110, 180, 0.18) 23px
+    );
+    background-size: 100% 23px;
+    box-shadow:
+      inset 0 0 0 1px rgba(0, 0, 0, 0.06),
+      0 1px 0 0 rgba(0, 0, 0, 0.18),
+      0 0 0 1px rgba(0, 0, 0, 0.12);
+  }
+
+  .journal-title {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 14px;
+    line-height: 23px;
+    font-weight: 700;
+    text-align: center;
+    letter-spacing: 0.26em;
+    text-transform: uppercase;
+    margin: 0;
+    color: #1f1a14;
+  }
+
+  .journal-candidate {
+    font-size: 13px;
+    line-height: 23px;
+    margin: 0;
+    text-align: center;
+    color: rgba(31, 26, 20, 0.85);
+    border-bottom: 1px dashed rgba(31, 26, 20, 0.35);
+    padding-bottom: 4px;
+  }
+  .journal-candidate span {
+    font-weight: 700;
+    color: #1f1a14;
+  }
+
+  .journal-count {
+    font-size: 11px;
+    line-height: 23px;
+    margin: 0 0 6px;
+    text-align: right;
+    color: rgba(31, 26, 20, 0.65);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .journal-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+
+  .journal-item {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    padding: 0;
+    line-height: 23px;
+    font-size: 13px;
+    color: #1f1a14;
+  }
+
+  /* Hand-drawn-feeling checkbox: 2px ink-color border, paper-color fill,
+     sized to sit on a rule line. */
+  .journal-check {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
+    border: 2px solid #1f1a14;
+    background: transparent;
+    text-align: center;
+    line-height: 10px;
+    font-size: 16px;
+    color: transparent;
+    font-weight: 700;
+    align-self: center;
+  }
+
+  /* Found: green ink, same box geometry as unchecked so the column stays even. */
+  .journal-check--found {
+    border-color: #2f7a3e;
+    color: #2f7a3e;
+  }
+
+  .journal-label {
+    flex: 1;
+  }
+
+  .journal-label--locked {
+    color: rgba(31, 26, 20, 0.45);
+    font-style: italic;
+  }
+
+  .journal-footer {
+    text-align: center;
+    font-size: 10px;
+    margin: 12px 0 0;
+    padding-top: 8px;
+    color: rgba(31, 26, 20, 0.5);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    border-top: 1px dashed rgba(31, 26, 20, 0.25);
+  }
+
+  /* HIRED stamp. Appears only when every entry is ticked — rendered by
+     journal.ts into .journal-paper at 100% completion. Classic red rubber
+     stamp: bordered box, diagonal angle, multiply blend so the ink
+     interacts with the paper rules. The distress comes from an SVG
+     turbulence + displacement filter injected once by journal.ts —
+     feTurbulence roughens every edge, a second turbulence pass punches
+     small alpha holes so the stamp reads as "ink didn't fully transfer"
+     rather than a clean print. text-shadow / box-shadow are dropped on
+     purpose: smoothing the rough edges back out defeats the filter. */
+
+  /* Case-closed: once the form is fully filled out, every direct child of
+     the paper EXCEPT the stamp dims down so the eye lands on the stamp
+     first. Dashed dividers ride borders rather than opacity, so dim those
+     explicitly too. */
+  .journal-paper.is-complete > *:not(.journal-stamp) {
+    opacity: 0.38;
+  }
+  .journal-paper.is-complete .journal-candidate {
+    border-bottom-color: rgba(31, 26, 20, 0.15);
+  }
+  .journal-paper.is-complete .journal-footer {
+    border-top-color: rgba(31, 26, 20, 0.1);
+  }
+
+  .journal-stamp {
+    position: absolute;
+    top: 44%;
+    left: 50%;
+    pointer-events: none;
+    color: #dc1f1f;
+    border: 5px solid #dc1f1f;
+    padding: 6px 22px 4px;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-size: 52px;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    line-height: 1;
+    /* -webkit-text-stroke fattens each letter in the same ink color, giving
+       a much heavier "stamp ink" look than Inter's bold weight alone. The
+       distress filter still applies on top of the thicker letters. */
+    -webkit-text-stroke: 2px currentColor;
+    mix-blend-mode: multiply;
+    filter: url(#journal-stamp-distress);
+    transform: translate(-50%, -50%) rotate(-14deg);
+    animation: journal-stamp-drop 480ms cubic-bezier(0.4, 1.5, 0.5, 1) both;
+  }
+
+  @keyframes journal-stamp-drop {
+    0% {
+      transform: translate(-50%, -50%) rotate(-14deg) scale(2.4);
+      opacity: 0;
+    }
+    55% {
+      transform: translate(-50%, -50%) rotate(-14deg) scale(0.92);
+      opacity: 1;
+    }
+    100% {
+      transform: translate(-50%, -50%) rotate(-14deg);
+      opacity: 1;
+    }
+  }
+
+  /* Dark mode — walnut clipboard + tanned parchment. Same metaphor, just
+     after-hours lighting. */
+  @media (prefers-color-scheme: dark) {
+    .journal-panel {
+      background: #5a3a1c;
+      box-shadow:
+        inset 0 0 0 2px #2a1a08,
+        inset 0 2px 0 0 rgba(255, 255, 255, 0.08),
+        0 18px 60px rgba(0, 0, 0, 0.7);
+    }
+    .journal-paper {
+      background: #2d2820;
+      color: #e3d8b8;
+      background-image: linear-gradient(
+        to bottom,
+        transparent 0,
+        transparent 22px,
+        rgba(140, 170, 220, 0.18) 22px,
+        rgba(140, 170, 220, 0.18) 23px
+      );
+      box-shadow:
+        inset 0 0 0 1px rgba(255, 255, 255, 0.04),
+        0 1px 0 0 rgba(0, 0, 0, 0.4),
+        0 0 0 1px rgba(0, 0, 0, 0.4);
+    }
+    .journal-title { color: #f5ead0; }
+    .journal-candidate {
+      color: rgba(227, 216, 184, 0.85);
+      border-bottom-color: rgba(227, 216, 184, 0.3);
+    }
+    .journal-candidate span { color: #f5ead0; }
+    .journal-count { color: rgba(227, 216, 184, 0.6); }
+    .journal-item { color: #e3d8b8; }
+    .journal-check {
+      border-color: #e3d8b8;
+    }
+    .journal-check--found {
+      border-color: #7dd87d;
+      color: #b8ff9e;
+    }
+    .journal-label--locked { color: rgba(227, 216, 184, 0.4); }
+    .journal-footer {
+      color: rgba(227, 216, 184, 0.5);
+      border-top-color: rgba(227, 216, 184, 0.2);
+    }
+    /* Brighter stamp red so it pops on dark parchment; ink still feels red
+       rather than highlighter. */
+    .journal-stamp {
+      color: #ff3838;
+      border-color: #ff3838;
+      /* Multiply works against white; against dark paper we want screen so
+         the stamp reads as glowing ink instead of muddying out. */
+      mix-blend-mode: screen;
+    }
+    .journal-paper.is-complete .journal-candidate {
+      border-bottom-color: rgba(227, 216, 184, 0.12);
+    }
+    .journal-paper.is-complete .journal-footer {
+      border-top-color: rgba(227, 216, 184, 0.08);
+    }
+  }
+
+  @media (max-width: 520px) {
+    .journal-panel {
+      padding: 36px 12px 18px;
+      min-width: 0;
+    }
+    .journal-paper {
+      padding: 20px 18px 16px;
+    }
+    .journal-title { font-size: 12px; letter-spacing: 0.2em; }
+    .journal-item { font-size: 12px; }
+    .journal-stamp {
+      font-size: 38px;
+      border-width: 4px;
+      padding: 4px 16px 3px;
+      -webkit-text-stroke-width: 1.5px;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .journal-backdrop,
+    .journal-panel {
+      transition: none;
+    }
+    .journal-stamp {
+      animation: none;
+    }
+  }
+
+  /* ---------- /Journal easter egg ---------- */
 }

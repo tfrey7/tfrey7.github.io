@@ -3,9 +3,11 @@ import {
   ARRIVALS,
   type AvatarAnim,
   createAvatarController,
+  EXITS,
   getCoreDurationMs,
   pickRandom,
 } from '../lib/avatar';
+import { markDiscovered } from '../lib/discoveries';
 import { end, tryStart } from '../lib/interaction-lock';
 
 const LOCK_ID = 'greenhouse-cascade';
@@ -57,6 +59,61 @@ const CORE_BROOM_SWEEP: AvatarAnim = {
 const SWEEP_DELAY_AFTER_CLICK_MS = 2200;
 // Beat after arrival lands before the sweep core starts.
 const ARRIVAL_TO_SWEEP_MS = 100;
+
+// Computer-operate core. Tim pivots away from camera to face the chassis
+// behind him, types on the (invisible) console keyboard at chest level,
+// then turns back to face forward. The animation choreography:
+//   frames 0-6  — anticipation turn (head looks back, body rotates)
+//   frames 7-18 — back-turned typing (chest-level, small hand motions)
+//   frames 19-24 — rotate back to face forward
+// Both seam frames (0, 24) are locked to the canonical Original pose so the
+// sprite chains cleanly from the broom-sweep's core-held state and into a
+// subsequent exit. No skipFrames: every frame is meaningful motion.
+const CORE_TERMINAL_TYPE: AvatarAnim = {
+  sprite: '/sprites/tim/cores/terminal-type.png',
+  durationMs: 2400,
+  cycles: 1,
+};
+
+// Hold at the receptacle after the sweep ends, so the eye can register
+// "all the papers are piled at the slot" before Tim starts operating the
+// machine. He stays in place for the terminal-type core — no relocation, no fade,
+// no re-arrival; any "Tim disappears mid-sequence" beat (even just opacity)
+// reads as an exit, which is wrong since he hasn't left yet. Conveniently,
+// the broom-end park leaves his body roughly in front of the CRT already
+// (brush front parks at the receptacle, but his 192px body extends ~96px
+// left of that, landing him under the screen).
+const RECEPTACLE_HOLD_MS = 500;
+// Beat between the receptacle hold and the terminal-type core. Both ends
+// are seam-locked to the Original standing pose, so this is a clean direct
+// sprite chain with no visible pop.
+const HOLD_TO_TYPE_MS = 0;
+// Fraction through the terminal-type core when the digitization fires.
+// Chosen so it lands during the back-turned typing window (frames 7-18,
+// roughly 28-72% of the animation), not during the anticipation turn or
+// the turn-back. 0.45 = frame ~11, comfortably mid-typing.
+const TYPE_TO_DIGITIZE_FRAC = 0.45;
+// Time between successive papers vaporizing in the cascade. Total cascade
+// span = PAPER_COUNT × this. With 100 papers @ 14ms = 1400ms — fast enough
+// to read as a single event, slow enough that you can see individual shards
+// being pulled into the slot.
+const DIGITIZE_STAGGER_MS = 14;
+// Per-paper dissolve duration (flash → particle flight). Particle flight is
+// driven by the CSS transition on .greenhouse-pixel.
+const DIGITIZE_FLASH_MS = 200;
+const DIGITIZE_FLIGHT_MS = 520;
+// How many pixel shards each paper becomes.
+const SHARDS_PER_PAPER = 4;
+// Initial outward kick before shards turn toward the slot — gives each
+// dissolution a tiny burst silhouette so the eye registers each paper.
+const SHARD_KICK_PX = 6;
+// Pause after the cascade finishes before the scorecard flash begins.
+const DIGITIZE_TO_FLASH_MS = 250;
+// Tim's exit timing inside the scorecard sequence. The strong-yes "landing"
+// pulse hits at FLASH_FAST*5 + FLASH_MED*5 + FLASH_SLOW*4 ms into the flash;
+// Tim peels off shortly after that so he's gone by the time the chassis
+// fades. Computed at runtime from those constants.
+const EXIT_AFTER_LANDING_MS = 400;
 
 // Broom front edge, as a fraction of the avatar bounding box. Any landed
 // paper at or behind this x-position gets swept — there is no rear bound,
@@ -199,9 +256,29 @@ export function initGreenhouse() {
     return superRect.right - stageRect.left;
   }
 
+  // Stage-local point the digitized pixel shards converge on. Picked roughly
+  // at the top-center of the painted RESUMES tower (right side of the
+  // chassis, near its intake). Coordinates in fractions of the 384px sprite;
+  // tune these if the slot doesn't read as the visual sink.
+  const SLOT_X_FRAC = (277 + (360 - 277) / 2) / 384;
+  const SLOT_Y_FRAC = 110 / 384;
+  function getSlotCenter(): { x: number; y: number } {
+    if (!stage || !superEl) return { x: 0, y: 0 };
+    const stageRect = stage.getBoundingClientRect();
+    const superRect = superEl.getBoundingClientRect();
+    return {
+      x: superRect.left - stageRect.left + SLOT_X_FRAC * superRect.width,
+      y: superRect.top - stageRect.top + SLOT_Y_FRAC * superRect.height,
+    };
+  }
+
   const avatar = createAvatarController(avatarEl);
 
   const activePapers: Paper[] = [];
+  // Pixel shards spawned by digitizePaper. Tracked separately from
+  // activePapers so a re-click can vacuum them out even after their source
+  // paper element has been removed.
+  const activeParticles: HTMLElement[] = [];
   let physicsFrame: number | null = null;
   let physicsLastTime = 0;
   // Increments for every paper that gets caught by the broom, used to
@@ -223,6 +300,8 @@ export function initGreenhouse() {
   function clearAll() {
     activePapers.forEach((p) => p.el.remove());
     activePapers.length = 0;
+    activeParticles.forEach((el) => el.remove());
+    activeParticles.length = 0;
     sweepTimers.forEach((t) => window.clearTimeout(t));
     sweepTimers.length = 0;
     sweepActive = false;
@@ -542,6 +621,146 @@ export function initGreenhouse() {
     }
   }
 
+  // Vaporizes one paper into a small burst of pixel shards that stream into
+  // the receptacle slot. Called per-paper by digitizePile, staggered.
+  function digitizePaper(p: Paper, slotX: number, slotY: number) {
+    // Capture the paper's last on-floor position before we mutate anything.
+    // p.x / p.y are stage-local; shards spawn there, then transition to the
+    // delta needed to land at the slot.
+    const startX = p.x;
+    const startY = p.y;
+
+    // Phase 1: paper itself flashes + lifts via CSS keyframes. The paper's
+    // transform is still being driven by physicsTick on the sweep-tail, but
+    // sweepActive is false by the time we get here, so the last transform
+    // sticks and the filter+opacity animation plays cleanly over it.
+    p.el.classList.add('is-digitizing');
+
+    // Phase 2: after the flash, swap the paper out for shards.
+    sweepTimers.push(
+      window.setTimeout(() => {
+        // Drop from activePapers so physicsTick (if still running) stops
+        // touching it, and remove the DOM node.
+        const idx = activePapers.indexOf(p);
+        if (idx >= 0) activePapers.splice(idx, 1);
+        p.el.remove();
+
+        const dx = slotX - startX;
+        const dy = slotY - startY;
+        for (let i = 0; i < SHARDS_PER_PAPER; i++) {
+          const shard = document.createElement('div');
+          shard.className = 'greenhouse-pixel';
+          // Spawn at the paper's last position. Outward kick gives each
+          // shard a brief silhouette so the dissolve reads per-paper rather
+          // than as a uniform blur.
+          const angle = (Math.PI * 2 * i) / SHARDS_PER_PAPER + Math.random() * 0.5;
+          const kick = SHARD_KICK_PX * (0.6 + Math.random() * 0.6);
+          shard.style.setProperty('--gh-pixel-x', `${startX}px`);
+          shard.style.setProperty('--gh-pixel-y', `${startY}px`);
+          shard.style.setProperty('--gh-pixel-kick-x', `${Math.cos(angle) * kick}px`);
+          shard.style.setProperty('--gh-pixel-kick-y', `${Math.sin(angle) * kick}px`);
+          // Target: kick collapses, position shifts by (dx,dy) with a small
+          // per-shard jitter so the convergence isn't a single laser-tight point.
+          const jitterX = (Math.random() - 0.5) * 8;
+          const jitterY = (Math.random() - 0.5) * 8;
+          shard.style.setProperty('--gh-pixel-tx', `${startX + dx + jitterX}px`);
+          shard.style.setProperty('--gh-pixel-ty', `${startY + dy + jitterY}px`);
+          stage!.appendChild(shard);
+          activeParticles.push(shard);
+          // Kick off the transition next frame so the browser registers the
+          // initial transform before the target one is set.
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => shard.classList.add('is-flying'));
+          });
+          // Clean up after the flight finishes.
+          const myShard = shard;
+          sweepTimers.push(
+            window.setTimeout(() => {
+              const pi = activeParticles.indexOf(myShard);
+              if (pi >= 0) activeParticles.splice(pi, 1);
+              myShard.remove();
+            }, DIGITIZE_FLIGHT_MS + 80),
+          );
+        }
+      }, DIGITIZE_FLASH_MS),
+    );
+  }
+
+  // Cascades digitizePaper across every remaining paper, top-of-pile first.
+  // Returns the total ms span of the cascade so the caller can chain the
+  // scorecard flash after it.
+  function digitizePile(): number {
+    // Snapshot since digitizePaper mutates activePapers as papers turn into
+    // shards. Sort by pile y-offset ascending (most negative = top row),
+    // tie-break left-to-right so a row vacuums in a readable order.
+    const snapshot = [...activePapers].sort((a, b) => {
+      if (a.sweptOffsetY !== b.sweptOffsetY) return a.sweptOffsetY - b.sweptOffsetY;
+      return a.sweptOffsetX - b.sweptOffsetX;
+    });
+    const slot = getSlotCenter();
+    snapshot.forEach((p, i) => {
+      sweepTimers.push(
+        window.setTimeout(() => digitizePaper(p, slot.x, slot.y), i * DIGITIZE_STAGGER_MS),
+      );
+    });
+    return snapshot.length * DIGITIZE_STAGGER_MS + DIGITIZE_FLASH_MS + DIGITIZE_FLIGHT_MS;
+  }
+
+  // After the broom-sweep parks Tim at the receptacle, this is the rest of
+  // the show: Tim holds a moment, then directly transitions into the
+  // terminal-type core IN PLACE. The broom-sweep's last frame and the
+  // terminal-type's first frame are both the Original standing pose, so
+  // the sprite swap is invisible. He never disappears mid-sequence (any
+  // opacity dip reads as an exit and breaks the continuity); the only
+  // actual exit is the final one after Strong Yes lands.
+  function runKeyboardSequence() {
+    if (!stage || !avatarEl) return;
+
+    const typeCore = CORE_TERMINAL_TYPE;
+
+    // Local timeline t=0 = start of this sequence (i.e., end of sweep core).
+    const T_TYPE_START = RECEPTACLE_HOLD_MS + HOLD_TO_TYPE_MS;
+    const typeMs = getCoreDurationMs(typeCore);
+    const T_DIGITIZE_START = T_TYPE_START + Math.round(typeMs * TYPE_TO_DIGITIZE_FRAC);
+    const T_TYPE_END = T_TYPE_START + typeMs;
+
+    // 1) Tim plays the terminal-type core in place: turns to face the
+    //    chassis behind him, types at chest level, turns back.
+    sweepTimers.push(
+      window.setTimeout(() => avatar.scheduleCore(typeCore, 0), T_TYPE_START),
+    );
+
+    // 2) Mid-typing (while Tim is still back-turned), the receptacle
+    //    digitizes the pile.
+    sweepTimers.push(window.setTimeout(digitizePile, T_DIGITIZE_START));
+
+    // 3) After both the typing core ends AND the digitize cascade finishes,
+    //    fire the scorecard flash. Cascade length depends on live paper
+    //    count at fire time; use a worst-case bound derived from PAPER_COUNT
+    //    so we can schedule eagerly. Flash starts at the later of (typing
+    //    end + small gap) and (digitize start + bound + small gap).
+    const digitizeBoundMs =
+      PAPER_COUNT * DIGITIZE_STAGGER_MS + DIGITIZE_FLASH_MS + DIGITIZE_FLIGHT_MS;
+    const T_FLASH_START = Math.max(
+      T_TYPE_END + DIGITIZE_TO_FLASH_MS,
+      T_DIGITIZE_START + digitizeBoundMs + DIGITIZE_TO_FLASH_MS,
+    );
+    sweepTimers.push(window.setTimeout(runScorecardFlash, T_FLASH_START));
+
+    // 4) Tim exits during the Strong-Yes landing hold, so he's gone before
+    //    the chassis fades. Landing pulse begins at:
+    //    5*FLASH_FAST + 5*FLASH_MED + 4*FLASH_SLOW into the flash.
+    const flashLandingOffset =
+      5 * FLASH_FAST_MS + 5 * FLASH_MED_MS + 4 * FLASH_SLOW_MS;
+    const T_FINAL_EXIT_START = T_FLASH_START + flashLandingOffset + EXIT_AFTER_LANDING_MS;
+    sweepTimers.push(
+      window.setTimeout(() => {
+        const finalExit = pickRandom(EXITS);
+        avatar.scheduleExit(finalExit, 0);
+      }, T_FINAL_EXIT_START),
+    );
+  }
+
   function runSweep() {
     if (!stage || !avatarEl) return;
     avatar.reset();
@@ -594,21 +813,13 @@ export function initGreenhouse() {
         // Snap avatar to its end position so any rAF rounding doesn't leave
         // it mid-stride.
         avatarEl.style.left = `${toX}px`;
-        // Sweep done, Tim parked at the receptacle. Release the interaction
-        // lock so re-clicks can reset and other easter eggs can run while
-        // Tim holds in place. Previously the lock was released at the tail
-        // of runScorecardFlash, but that path is deferred until the (future)
-        // pickup-and-insert animation lands.
-        end(LOCK_ID);
+        // Sweep done, Tim parked at the receptacle. Hand off to the next
+        // phase (hold → terminal-type core → digitize pile → scorecard
+        // flash → final exit). The lock is released at the tail of
+        // runScorecardFlash, when the chassis fade completes.
+        runKeyboardSequence();
       }, T_CORE_END),
     );
-
-    // Scorecard flash is the computer's reaction to receiving the resumes,
-    // so it should fire from the (future) pickup-and-insert animation — not
-    // here. For now we leave Tim parked in front of the slot with the pile
-    // ready; runScorecardFlash stays defined and will be wired up when the
-    // insert animation lands.
-    void runScorecardFlash;
   }
 
   function start(clickX: number, clickY: number) {
@@ -634,6 +845,7 @@ export function initGreenhouse() {
   trigger.addEventListener('click', (e) => {
     e.stopPropagation();
     if (!tryStart(LOCK_ID)) return;
+    markDiscovered('greenhouse');
     resumeAudio();
     start(e.clientX, e.clientY);
   });

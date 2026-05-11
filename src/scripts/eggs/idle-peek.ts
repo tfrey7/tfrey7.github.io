@@ -13,7 +13,9 @@
 // playing, and yields immediately if any activity happens.
 
 import { ARRIVALS } from '../lib/avatar';
+import { markDiscovered } from '../lib/discoveries';
 import { end, isLocked, onLockChange, tryStart } from '../lib/interaction-lock';
+import { isJournalOpen } from './journal';
 
 const LOCK_ID = 'idle-peek';
 
@@ -43,9 +45,16 @@ function prefersReducedMotion(): boolean {
 
 function pickEdge(): Edge {
   const r = Math.random();
-  if (r < 0.4) return 'left';
-  if (r < 0.8) return 'right';
+  if (r < 0.45) return 'left';
+  if (r < 0.9) return 'right';
   return 'bottom';
+}
+
+// Randomize the vertical anchor for side peeks so successive firings don't
+// stamp on the exact same spot — that uniformity made the sides feel
+// invisible compared to the bottom peek.
+function pickSideAnchor(): number {
+  return 14 + Math.random() * 28;
 }
 
 function buildAvatar(): HTMLElement {
@@ -96,7 +105,10 @@ export function initIdlePeek() {
     tickTimer = null;
     // Bail if anything else holds the lock — and don't reschedule yet; the
     // lock-change listener will restart us when the page is quiet again.
-    if (isLocked()) return;
+    // Same goes for the journal: it doesn't hold the lock (it's a pure UI
+    // overlay), so we have to check it explicitly. User-driven close fires
+    // a keydown which restarts the idle countdown via onActivity.
+    if (isLocked() || isJournalOpen()) return;
     if (document.hidden) {
       tickTimer = window.setTimeout(tick, TICK_INTERVAL_MS);
       return;
@@ -118,10 +130,14 @@ export function initIdlePeek() {
       tickTimer = window.setTimeout(tick, TICK_INTERVAL_MS);
       return;
     }
+    markDiscovered('idle-peek');
 
     const edge = pickEdge();
     const el = buildAvatar();
     el.classList.add(`is-peek-${edge}`);
+    if (edge === 'left' || edge === 'right') {
+      el.style.bottom = `${pickSideAnchor()}vh`;
+    }
     document.body.appendChild(el);
     // Force reflow so the initial offscreen position paints before we add
     // the .is-peeking class that animates the slide-in.

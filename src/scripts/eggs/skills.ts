@@ -7,6 +7,7 @@ import {
   createAvatarController,
   pickRandom,
 } from '../lib/avatar';
+import { markDiscovered } from '../lib/discoveries';
 import { end, tryStart } from '../lib/interaction-lock';
 
 const LOCK_ID = 'skills-cascade';
@@ -98,6 +99,7 @@ export function initSkills() {
   function startCascade(clickX: number, clickY: number) {
     if (!stage || cascading || stage.classList.contains('is-fixing')) return;
     if (!tryStart(LOCK_ID)) return;
+    markDiscovered('skills');
     cascading = true;
     stage.classList.add('is-cascading');
     avatar.reset();

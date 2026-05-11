@@ -1,12 +1,11 @@
 import { playTimeWarp } from '../lib/audio';
 import {
-  ARRIVALS,
   AVATAR_FADE_MS,
   type AvatarAnim,
-  EXITS,
   createAvatarController,
   pickRandom,
 } from '../lib/avatar';
+import { markDiscovered } from '../lib/discoveries';
 import { end, tryStart } from '../lib/interaction-lock';
 
 const LOCK_ID = 'time-warp';
@@ -43,9 +42,10 @@ const FIX_DELAY_MS = 2000;
 const ARRIVAL_TO_CORE_MS = 200;
 const CORE_TO_EXIT_MS = 320;
 
-// 90s uses the brown-haired, flannel-wearing tim-90s variant so the sprite
-// reads as a period character. The other eras use the modern Tim sprite —
-// he's a time-traveler from the present arriving to fix anachronistic chaos.
+// Each era has its own Tim sprite — canonical body and green flannel, with an
+// era-specific accessory (90s hair, 80s aviators+sweatband, 60s horn-rims, west
+// cowboy hat, dino bone necklace + fur shawl). Arrivals and exits are also
+// per-era so the accessory tracks across the whole appearance.
 const ARRIVALS_90S: AvatarAnim[] = [
   { sprite: '/sprites/tim-90s/arrivals/crt-tv-arrival.png', durationMs: 1100 },
 ];
@@ -57,9 +57,47 @@ const CORE_90S: AvatarAnim = {
   durationMs: 1500,
 };
 
-// Generic fix gesture for non-90s eras — modern Tim, hammer in hand.
-const CORE_GENERIC: AvatarAnim = {
-  sprite: '/sprites/tim/cores/hammer-fix.png',
+const ARRIVALS_80S: AvatarAnim[] = [
+  { sprite: '/sprites/tim-80s/arrivals/vhs-static-arrival.png', durationMs: 1100 },
+];
+const EXITS_80S: AvatarAnim[] = [
+  { sprite: '/sprites/tim-80s/exits/vhs-rewind-departure.png', durationMs: 1100 },
+];
+const CORE_80S: AvatarAnim = {
+  sprite: '/sprites/tim-80s/cores/hammer-fix.png',
+  durationMs: 1500,
+};
+
+const ARRIVALS_60S: AvatarAnim[] = [
+  { sprite: '/sprites/tim-60s/arrivals/punch-card-arrival.png', durationMs: 1100 },
+];
+const EXITS_60S: AvatarAnim[] = [
+  { sprite: '/sprites/tim-60s/exits/punch-card-departure.png', durationMs: 1100 },
+];
+const CORE_60S: AvatarAnim = {
+  sprite: '/sprites/tim-60s/cores/hammer-fix.png',
+  durationMs: 1500,
+};
+
+const ARRIVALS_WEST: AvatarAnim[] = [
+  { sprite: '/sprites/tim-west/arrivals/tumbleweed-arrival.png', durationMs: 1100 },
+];
+const EXITS_WEST: AvatarAnim[] = [
+  { sprite: '/sprites/tim-west/exits/tumbleweed-departure.png', durationMs: 1100 },
+];
+const CORE_WEST: AvatarAnim = {
+  sprite: '/sprites/tim-west/cores/hammer-fix.png',
+  durationMs: 1500,
+};
+
+const ARRIVALS_DINO: AvatarAnim[] = [
+  { sprite: '/sprites/tim-dino/arrivals/meteor-arrival.png', durationMs: 1100 },
+];
+const EXITS_DINO: AvatarAnim[] = [
+  { sprite: '/sprites/tim-dino/exits/volcano-departure.png', durationMs: 1100 },
+];
+const CORE_DINO: AvatarAnim = {
+  sprite: '/sprites/tim-dino/cores/hammer-fix.png',
   durationMs: 1500,
 };
 
@@ -141,9 +179,9 @@ const ERA_CONFIGS: Record<Era, EraConfig> = {
     bodyClass: 'era-80s',
     marquee: '> CONNECT 2400 BAUD ▌ LOGIN: TFREY ▌ ACCESS GRANTED ▌ LOADING PROFILE.DAT ▌ PARSING RECORDS... ▌ EOF',
     bottomBanner: 'IBM PC/AT · DOS 2.11 · 640K RAM · READY_',
-    arrivals: ARRIVALS,
-    exits: EXITS,
-    core: CORE_GENERIC,
+    arrivals: ARRIVALS_80S,
+    exits: EXITS_80S,
+    core: CORE_80S,
     transform: (orig) => shiftYears(orig, -40),
     scramble: scrambleNumeric,
   },
@@ -151,9 +189,9 @@ const ERA_CONFIGS: Record<Era, EraConfig> = {
     bodyClass: 'era-60s',
     marquee: '▌ JOB 0742 ▌ IBM SYSTEM/360 MODEL 65 ▌ BATCH COMPLETE ▌ RUN TIME 00:04:17 ▌ PAGES 0001 ▌ EOJ ▌',
     bottomBanner: 'IBM 1403 LINE PRINTER · JOB 0742 · PAGE 0001 OF 0001',
-    arrivals: ARRIVALS,
-    exits: EXITS,
-    core: CORE_GENERIC,
+    arrivals: ARRIVALS_60S,
+    exits: EXITS_60S,
+    core: CORE_60S,
     transform: (orig) => shiftYears(orig, -60),
     scramble: scrambleNumeric,
   },
@@ -161,9 +199,9 @@ const ERA_CONFIGS: Record<Era, EraConfig> = {
     bodyClass: 'era-west',
     marquee: '★ WANTED ★ FOR DEEDS OF EXCELLENT CODE ★ REWARD: $500 IN GOLD ★ INQUIRE AT THE SALOON ★',
     bottomBanner: 'TELEGRAPH THE OFFICE OF MR. FREY',
-    arrivals: ARRIVALS,
-    exits: EXITS,
-    core: CORE_GENERIC,
+    arrivals: ARRIVALS_WEST,
+    exits: EXITS_WEST,
+    core: CORE_WEST,
     transform: (orig, slot) => phraseDates(orig, 'the Present Day', WESTERN_DATES, slot),
     scramble: (orig) => scramblePhrase(orig, 'the Present Day', WESTERN_DATES),
   },
@@ -171,9 +209,9 @@ const ERA_CONFIGS: Record<Era, EraConfig> = {
     bodyClass: 'era-dino',
     marquee: '◆ UGH ROCK ◆ TIM HUNT BUG ◆ FIRE GOOD ◆ STACK TRACE IN CAVE ◆ ROAR ◆',
     bottomBanner: 'PAINTED IN OCHRE · LATE CRETACEOUS',
-    arrivals: ARRIVALS,
-    exits: EXITS,
-    core: CORE_GENERIC,
+    arrivals: ARRIVALS_DINO,
+    exits: EXITS_DINO,
+    core: CORE_DINO,
     transform: (orig, slot) => phraseDates(orig, 'Now', DINO_ERAS, slot),
     scramble: (orig) => scramblePhrase(orig, 'Now', DINO_ERAS),
   },
@@ -198,48 +236,49 @@ const DINO_PALM_INNER =
   `<circle cx="94" cy="170" r="4" />` +
   `</g>`;
 
-const DINO_VOLCANO_INNER =
-  `<g fill="currentColor">` +
-  `<path d="M 16 320 L 86 220 L 102 232 L 130 180 L 152 195 L 178 75 L 215 130 L 252 85 L 268 175 L 290 195 L 320 230 L 384 320 Z" />` +
-  `</g>` +
-  `<g class="dino-lava">` +
-  `<path d="M 178 80 L 215 130 L 252 85 L 224 75 L 215 95 L 198 78 Z" />` +
-  `<path d="M 178 80 C 182 105 178 140 184 175 L 200 175 C 198 140 196 105 198 80 Z" />` +
-  `<path d="M 252 85 C 250 110 254 140 252 165 L 268 165 C 268 140 270 110 268 85 Z" />` +
+// Volcano body is now a Lascaux-fresco PNG. The animation layer (crater
+// glow, lava bombs, smoke) lives in an overlay SVG positioned identically.
+// viewBox is 480×480 matching the PNG's natural pixel space; crater notch
+// in the PNG lands at approximately (210, 100) with the V-dip at (210, 140).
+const DINO_VOLCANO_FX =
+  `<ellipse class="dino-crater-glow" cx="210" cy="135" rx="22" ry="13" />` +
+  `<g class="dino-lava-bombs">` +
+  `<circle class="lb1" cx="210" cy="108" r="6" />` +
+  `<circle class="lb2" cx="210" cy="108" r="5" />` +
+  `<circle class="lb3" cx="210" cy="108" r="7" />` +
   `</g>` +
   `<g class="dino-smoke">` +
-  `<ellipse class="s1" cx="208" cy="50" rx="22" ry="13" />` +
-  `<ellipse class="s2" cx="228" cy="28" rx="18" ry="11" />` +
-  `<ellipse class="s3" cx="200" cy="8" rx="20" ry="10" />` +
+  `<ellipse class="s1" cx="205" cy="72" rx="22" ry="13" />` +
+  `<ellipse class="s2" cx="225" cy="44" rx="18" ry="11" />` +
+  `<ellipse class="s3" cx="200" cy="20" rx="20" ry="10" />` +
   `</g>`;
 
-const DINO_BRONTO_INNER =
+// Bronto, ptero, and stego are now raster cave-fresco PNGs (gpt-image-1).
+// The hand-coded SVGs read as cheap geometric silhouettes; the PNGs carry
+// pigment texture and warmth. Volcano + palms + mountains stay SVG so the
+// volcano animations (crater glow, lava bombs) overlay cleanly.
+
+// Distant mountain horizon — full-width irregular ridgeline, stretched via
+// preserveAspectRatio="none". Lives behind everything at very low opacity.
+const DINO_MOUNTAINS_INNER =
   `<g fill="currentColor">` +
-  `<ellipse cx="270" cy="135" rx="115" ry="50" />` +
-  `<path d="M 175 130 C 110 100 65 50 50 12 C 50 0 68 0 80 14 C 105 50 165 100 200 125 Z" />` +
-  `<ellipse cx="56" cy="14" rx="22" ry="13" />` +
-  `<path d="M 360 130 C 415 145 460 200 488 258 C 494 270 478 272 470 264 C 435 215 395 165 345 145 Z" />` +
-  `<path d="M 208 175 L 208 270 L 234 270 L 234 175 Z" />` +
-  `<path d="M 248 180 L 248 270 L 274 270 L 274 180 Z" />` +
-  `<path d="M 292 180 L 292 270 L 318 270 L 318 180 Z" />` +
-  `<path d="M 334 175 L 334 270 L 360 270 L 360 175 Z" />` +
+  `<path d="M 0 200 L 0 132 L 68 78 L 122 112 L 178 48 L 250 104 L 298 72 L 360 122 L 422 60 L 494 104 L 562 38 L 642 114 L 702 80 L 774 130 L 840 58 L 922 112 L 1000 70 L 1000 200 Z" />` +
   `</g>`;
 
-const DINO_PTERO_INNER =
-  `<g fill="currentColor">` +
-  `<path d="M 70 30 C 50 18 30 14 6 22 C 22 26 38 30 50 33 C 60 36 68 33 70 32 Z" />` +
-  `<path d="M 70 30 C 90 18 110 14 134 22 C 118 26 102 30 90 33 C 80 36 72 33 70 32 Z" />` +
-  `<ellipse cx="70" cy="32" rx="7" ry="5" />` +
-  `<path d="M 76 32 L 95 30 L 76 36 Z" />` +
-  `<path d="M 67 28 L 60 18 L 70 28 Z" />` +
-  `</g>`;
-
+// DOM order = depth order (later = on top). Volcano is deepest, mountain
+// horizon cuts across in front of it, then palms, then ground-plane dinos,
+// then ptero overhead.
 const DINO_DECOR_HTML =
+  `<div class="dino-decor-volcano" aria-hidden="true">` +
+    `<img class="dino-volcano-img" src="/dino-decor/volcano.png" alt="" />` +
+    `<svg viewBox="0 0 480 480" preserveAspectRatio="none" class="dino-volcano-fx">${DINO_VOLCANO_FX}</svg>` +
+  `</div>` +
+  `<svg viewBox="0 0 1000 200" preserveAspectRatio="none" class="dino-decor-mountains" aria-hidden="true">${DINO_MOUNTAINS_INNER}</svg>` +
   `<svg viewBox="0 0 200 600" class="dino-decor-palm dino-decor-palm--left" aria-hidden="true">${DINO_PALM_INNER}</svg>` +
   `<svg viewBox="0 0 200 600" class="dino-decor-palm dino-decor-palm--right" aria-hidden="true">${DINO_PALM_INNER}</svg>` +
-  `<svg viewBox="0 0 500 280" class="dino-decor-bronto" aria-hidden="true">${DINO_BRONTO_INNER}</svg>` +
-  `<svg viewBox="0 0 400 320" class="dino-decor-volcano" aria-hidden="true">${DINO_VOLCANO_INNER}</svg>` +
-  `<svg viewBox="0 0 140 60" class="dino-decor-ptero" aria-hidden="true">${DINO_PTERO_INNER}</svg>`;
+  `<img class="dino-decor-bronto" src="/dino-decor/bronto.png" alt="" aria-hidden="true" />` +
+  `<img class="dino-decor-stego" src="/dino-decor/stego.png" alt="" aria-hidden="true" />` +
+  `<img class="dino-decor-ptero" src="/dino-decor/ptero.png" alt="" aria-hidden="true" />`;
 
 // Avatar frame is 192×192. We anchor the frame so the avatar's feet land
 // near the clicked element (head extends upward from the click line), then
@@ -635,6 +674,7 @@ export function initTimeWarp() {
           end(LOCK_ID);
         } else {
           if (state === 'dormant' && !tryStart(LOCK_ID)) return;
+          markDiscovered('time-warp');
           currentEraIndex += 1;
           flip(ERA_SEQUENCE[currentEraIndex]);
           state = 'warped';
@@ -661,6 +701,7 @@ export function initTimeWarp() {
 
       if (state === 'dormant') {
         if (!tryStart(LOCK_ID)) return;
+        markDiscovered('time-warp');
         currentEraIndex = 0;
         flip(ERA_SEQUENCE[0]);
         state = 'warped';

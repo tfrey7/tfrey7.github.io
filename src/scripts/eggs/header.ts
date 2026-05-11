@@ -1,4 +1,5 @@
 import { playAngelicChime, resumeAudio } from '../lib/audio';
+import { markDiscovered } from '../lib/discoveries';
 import { end, tryStart } from '../lib/interaction-lock';
 
 // Name click → avatar pops in next to the name and gives a thumbs-up + wink.
@@ -15,6 +16,7 @@ export function initHeader() {
 
   nameInner.addEventListener('click', () => {
     if (!tryStart(LOCK_ID)) return;
+    markDiscovered('name');
     resumeAudio();
     nameAvatar.classList.add('is-playing');
     playAngelicChime();

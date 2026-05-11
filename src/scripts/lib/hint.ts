@@ -2,6 +2,12 @@
 // quietly pulse one of the interactive Easter-egg triggers they haven't
 // found yet. One nudge at a time, cycles through, and stops once every
 // trigger has been clicked at least once in this session.
+//
+// Defers to the shared interaction lock: if an egg is mid-flight the hint
+// stays quiet, otherwise a glowing trigger would invite a click that the
+// single-flight lock silently drops.
+
+import { isLocked, onLockChange } from './interaction-lock';
 
 const IDLE_BEFORE_FIRST_HINT_MS = 6000;
 const IDLE_BETWEEN_HINTS_MS = 9000;
@@ -89,6 +95,11 @@ export function initHint() {
       schedule(IDLE_BETWEEN_HINTS_MS);
       return;
     }
+    if (isLocked()) {
+      // Another egg is mid-flight; the lock-change listener will restart
+      // the countdown when it releases.
+      return;
+    }
     const undiscovered = targets.filter((t) => !t.discovered);
     if (undiscovered.length === 0) return;
 
@@ -119,6 +130,21 @@ export function initHint() {
       }
       clearActiveHint();
     } else if (idleTimer === null) {
+      schedule(hasFiredOnce ? IDLE_BETWEEN_HINTS_MS : IDLE_BEFORE_FIRST_HINT_MS);
+    }
+  });
+
+  // While an egg holds the lock, pause the idle countdown and hide any
+  // active glow. When the lock releases, start a fresh countdown so the
+  // next hint waits a real idle window rather than firing immediately.
+  onLockChange(() => {
+    if (isLocked()) {
+      if (idleTimer !== null) {
+        window.clearTimeout(idleTimer);
+        idleTimer = null;
+      }
+      clearActiveHint();
+    } else {
       schedule(hasFiredOnce ? IDLE_BETWEEN_HINTS_MS : IDLE_BEFORE_FIRST_HINT_MS);
     }
   });

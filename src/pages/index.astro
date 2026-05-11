@@ -119,19 +119,9 @@ import { contact, skills, experience, education } from '../data/profile';
 </Base>
 
 <script>
-  import { initHeader } from '../scripts/eggs/header';
-  import { initSkills } from '../scripts/eggs/skills';
-  import { initManyHats } from '../scripts/eggs/many-hats';
-  import { initGreenhouse } from '../scripts/eggs/greenhouse';
-  import { initTimeWarp } from '../scripts/eggs/time-warp';
-  import { initIdlePeek } from '../scripts/eggs/idle-peek';
+  import { initAllEggs } from '../scripts/eggs/manifest';
   import { initHint } from '../scripts/lib/hint';
 
-  initHeader();
-  initSkills();
-  initManyHats();
-  initGreenhouse();
-  initTimeWarp();
-  initIdlePeek();
+  initAllEggs();
   initHint();
 </script>

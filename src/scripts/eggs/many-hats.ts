@@ -1,4 +1,5 @@
 import { playRoleTick } from '../lib/audio';
+import { markDiscovered } from '../lib/discoveries';
 import { end, tryStart } from '../lib/interaction-lock';
 
 // Founding-Engineer hat-cycle. The joke: founding engineers wear every hat.
@@ -243,6 +244,7 @@ export function initManyHats() {
   function start() {
     if (!roleCycle || !roleCycleWord || !roleCycleOverlay) return;
     if (!tryStart(LOCK_ID, { reentrant: true })) return;
+    markDiscovered('many-hats');
     clearTimers();
     textCycleActive = true;
 
