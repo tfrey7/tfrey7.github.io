@@ -23,9 +23,27 @@ import {
   getDiscovered,
   onDiscoveryChange,
 } from '../lib/discoveries';
+import {
+  playFireworkBurst,
+  playFireworkLaunch,
+  playPaperShuffle,
+  resumeAudio,
+} from '../lib/audio';
+import { launchFirework, type Rating } from '../lib/firework';
 import { hasHint, hintFor } from '../lib/hint';
 import { startSnakeDrawMode } from './draw-snake';
 import { REGISTRY } from './manifest';
+
+// Per-rating pitch shift for the clipboard firework — mirrors the keying
+// used by the in-page greenhouse celebration so each random icon-pop
+// reads as a higher/lower variant of the same "ascending" voice.
+const CLIPBOARD_FIREWORK_PITCH: Record<Rating, number> = {
+  'strong-no': 0.85,
+  no: 0.95,
+  mixed: 1.0,
+  yes: 1.1,
+  'strong-yes': 1.2,
+};
 
 // How long to wait after the user clicks a locked journal item before
 // firing the page glow — long enough for the tuck transition to mostly
@@ -41,9 +59,50 @@ const FIRST_REVEAL_DELAY_MS = 900;
 let _open = false;
 let panelEl: HTMLElement | null = null;
 let unsubscribeFirstReveal: (() => void) | null = null;
+// Shared, lazily-mounted firework stage for the clipboard-row celebrations.
+// One viewport-anchored fixed div hosts every firework spawned by clicking
+// found rows — created on first use so we don't add nodes to the DOM for
+// visitors who never trigger one.
+let fireworkStage: HTMLElement | null = null;
+
+function ensureFireworkStage(): HTMLElement {
+  if (fireworkStage) return fireworkStage;
+  const el = document.createElement('div');
+  el.className = 'journal-firework-stage';
+  document.body.appendChild(el);
+  fireworkStage = el;
+  return el;
+}
+// When true, the clipboard stays parked fully below the viewport — no clip,
+// no top strip. Set by hideJournal() and cleared by peekJournal(). Honored by
+// mount() so a first-time visitor who triggers a warp before the journal has
+// mounted doesn't see it pop into the tucked anchor mid-warp.
+let _suppressed = false;
 
 export function isJournalOpen(): boolean {
   return _open;
+}
+
+// External hook for full-screen interactions (e.g. time-warp): drop the
+// panel off-screen entirely. Safe before initJournal/mount — the flag is
+// honored when the panel does mount.
+export function hideJournal(): void {
+  _suppressed = true;
+  if (!panelEl) return;
+  if (!panelEl.classList.contains('is-open') && !panelEl.classList.contains('is-tucked')) return;
+  panelEl.classList.remove('is-open', 'is-tucked');
+  _open = false;
+}
+
+// Counterpart to hideJournal: clear suppression and slide the panel back up
+// into the tucked peek. No-op if the panel is already visible (tucked/open)
+// or hasn't been mounted yet.
+export function peekJournal(): void {
+  _suppressed = false;
+  if (!panelEl) return;
+  if (panelEl.classList.contains('is-open') || panelEl.classList.contains('is-tucked')) return;
+  panelEl.classList.add('is-tucked');
+  playPaperShuffle('up');
 }
 
 export function initJournal() {
@@ -153,6 +212,7 @@ export function initJournal() {
     _open = true;
     panelEl.classList.remove('is-tucked');
     panelEl.classList.add('is-open');
+    playPaperShuffle('up');
     syncClipAria();
   }
 
@@ -161,12 +221,35 @@ export function initJournal() {
     _open = false;
     panelEl.classList.remove('is-open');
     panelEl.classList.add('is-tucked');
+    playPaperShuffle('down');
     syncClipAria();
   }
 
   function toggle() {
     if (_open) tuck();
     else expand();
+  }
+
+  function fireClipboardFirework() {
+    const clip = panelEl?.querySelector<HTMLElement>('.journal-clip');
+    if (!clip) return;
+    // Audio is gated on first user gesture (browser autoplay policy). The
+    // found-row click qualifies, but the lib-level audio module needs the
+    // resume nudge to actually wire up its oscillators.
+    resumeAudio();
+    const rect = clip.getBoundingClientRect();
+    const stage = ensureFireworkStage();
+    launchFirework({
+      stage,
+      // Center of the clip. Stage is position:fixed/inset:0 so viewport
+      // coords map 1:1 to stage-local coords.
+      originX: rect.left + rect.width / 2,
+      originY: rect.top + rect.height / 2,
+      onLaunch: (rating) =>
+        playFireworkLaunch(CLIPBOARD_FIREWORK_PITCH[rating]),
+      onBurst: (rating) =>
+        playFireworkBurst(CLIPBOARD_FIREWORK_PITCH[rating]),
+    });
   }
 
   function showHint(id: string) {
@@ -195,8 +278,10 @@ export function initJournal() {
 
     // Force reflow so the off-screen-below starting position paints before
     // we add .is-tucked, which transitions up into the tucked anchor.
+    // Honor _suppressed so a first-time mount triggered mid-warp leaves the
+    // panel parked below the viewport until peekJournal() releases it.
     void el.offsetWidth;
-    el.classList.add('is-tucked');
+    if (!_suppressed) el.classList.add('is-tucked');
 
     // One delegated click handler covers every interactive child:
     //   - clear button: wipe discoveries (no toggle)
@@ -233,6 +318,17 @@ export function initJournal() {
       if (btn) {
         const id = btn.closest<HTMLElement>('.journal-item')?.dataset.eggId;
         if (id) showHint(id);
+        return;
+      }
+      // Click on an already-found row: a tiny celebratory firework launches
+      // from the clipboard. Greenhouse only for now — the supercomputer egg
+      // is the only one that already has the firework vocabulary, so reusing
+      // it here keeps the "this is the same machine cheering you on" feel.
+      const foundItem = t?.closest<HTMLElement>('.journal-item.is-found');
+      if (foundItem) {
+        if (foundItem.dataset.eggId === 'greenhouse') {
+          fireClipboardFirework();
+        }
         return;
       }
       if (!_open) toggle();

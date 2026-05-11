@@ -13,6 +13,7 @@
 // releases it just before handing off to openSnake() so the game can take
 // its own 'snake' lock.
 
+import { startPencilScratch } from '../lib/audio';
 import { end, tryStart } from '../lib/interaction-lock';
 import { openSnake } from './snake';
 import {
@@ -87,6 +88,15 @@ export function startSnakeDrawMode(): void {
   let points: Point[] = [];
   let drawing = false;
   let evaluating = false;
+  let scratch: ReturnType<typeof startPencilScratch> | null = null;
+  let lastMoveTime = 0;
+
+  function stopScratch() {
+    if (scratch) {
+      scratch.stop();
+      scratch = null;
+    }
+  }
   let cssWidth = 0;
   let cssHeight = 0;
   let templateTransform: Transform = { scale: 1, ox: 0, oy: 0 };
@@ -198,6 +208,12 @@ export function startSnakeDrawMode(): void {
     clearCanvas();
     statusEl.textContent = '';
     try { canvas.setPointerCapture(e.pointerId); } catch {}
+    // Tip touching paper — a soft initial tick that the velocity ramp will
+    // take over from on the first real move.
+    stopScratch();
+    scratch = startPencilScratch();
+    scratch.setIntensity(0.25);
+    lastMoveTime = performance.now();
     e.preventDefault();
   }
 
@@ -212,12 +228,25 @@ export function startSnakeDrawMode(): void {
     if (dx * dx + dy * dy < 4) return;
     points.push(p);
     strokeSegment(last, p, '#2a1a0a');
+
+    // Velocity → scratch intensity. ~0.3 px/ms (slow drag) lands near 0.45;
+    // ~1.5 px/ms (a brisk scribble) saturates near 1.0. The audio side
+    // ramps back to 0 within ~320ms, so a paused cursor quickly goes
+    // silent without any timer here.
+    const now = performance.now();
+    const dt = Math.max(1, now - lastMoveTime);
+    const dist = Math.hypot(dx, dy);
+    const velocity = dist / dt; // px/ms
+    const intensity = Math.min(1, 0.35 + velocity * 0.55);
+    scratch?.setIntensity(intensity);
+    lastMoveTime = now;
   }
 
   function onPointerUp(e: PointerEvent) {
     if (!drawing) return;
     drawing = false;
     try { canvas.releasePointerCapture(e.pointerId); } catch {}
+    stopScratch();
     evaluate();
   }
 
@@ -259,6 +288,7 @@ export function startSnakeDrawMode(): void {
   }
 
   function cleanup() {
+    stopScratch();
     canvas.removeEventListener('pointerdown', onPointerDown);
     canvas.removeEventListener('pointermove', onPointerMove);
     canvas.removeEventListener('pointerup', onPointerUp);

@@ -115,6 +115,7 @@ export function openSnake() {
     reset();
     phase = 'playing';
     overlay.style.display = 'none';
+    audio.start();
     scheduleTick();
     render();
   }
@@ -125,12 +126,16 @@ export function openSnake() {
       window.clearTimeout(tickTimer);
       tickTimer = null;
     }
-    if (score > hiScore) {
+    const beatHi = score > hiScore;
+    if (beatHi) {
       hiScore = score;
       writeHiScore(hiScore);
       updateScoreUI();
     }
     audio.death();
+    if (beatHi && score > 0) {
+      window.setTimeout(() => audio.hiScore(), 520);
+    }
     showOverlay(
       `<div class="snake-overlay-title">GAME OVER</div>` +
         `<div class="snake-overlay-score">SCORE ${pad(score)}</div>` +
@@ -181,11 +186,12 @@ export function openSnake() {
 
     snake.unshift(next);
     if (next.x === food.x && next.y === food.y) {
+      const picked = score;
       score += POINTS_PER_FOOD;
       tickMs = Math.max(TICK_FLOOR_MS, tickMs - TICK_SPEEDUP_PER_FOOD_MS);
       food = spawnFood(snake);
       updateScoreUI();
-      audio.eat();
+      audio.eat(picked);
     } else {
       snake.pop();
     }
@@ -427,22 +433,43 @@ function createAudio() {
     if (c.state === 'suspended') c.resume().catch(() => {});
     return c;
   }
+  // C major pentatonic ladder — each eat lands on the next rung so the
+  // pickups sound like a climb instead of a uniform blip. Cycles around
+  // up the octave so long runs keep rising in tone.
+  const EAT_LADDER = [523.25, 587.33, 659.25, 783.99, 880.0, 1046.5];
+
+  // Plays a quick square-wave blip. Helper keeps the bleeps consistent.
+  function blip(c: AudioContext, freq: number, dur: number, peak: number, sweep?: number) {
+    const now = c.currentTime;
+    const osc = c.createOscillator();
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(freq, now);
+    if (sweep) osc.frequency.exponentialRampToValueAtTime(freq * sweep, now + dur * 0.8);
+    const g = c.createGain();
+    g.gain.setValueAtTime(0, now);
+    g.gain.linearRampToValueAtTime(peak, now + 0.005);
+    g.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+    osc.connect(g).connect(c.destination);
+    osc.start(now);
+    osc.stop(now + dur + 0.02);
+  }
+
   return {
-    eat() {
+    start() {
       const c = ready();
       if (!c) return;
-      const now = c.currentTime;
-      const osc = c.createOscillator();
-      osc.type = 'square';
-      osc.frequency.setValueAtTime(660, now);
-      osc.frequency.exponentialRampToValueAtTime(990, now + 0.06);
-      const g = c.createGain();
-      g.gain.setValueAtTime(0, now);
-      g.gain.linearRampToValueAtTime(0.06, now + 0.005);
-      g.gain.exponentialRampToValueAtTime(0.0001, now + 0.09);
-      osc.connect(g).connect(c.destination);
-      osc.start(now);
-      osc.stop(now + 0.1);
+      // Low → high two-step "ready, go!" power-on.
+      blip(c, 392, 0.08, 0.05);
+      window.setTimeout(() => {
+        const c2 = ready();
+        if (c2) blip(c2, 587.33, 0.1, 0.05, 1.15);
+      }, 90);
+    },
+    eat(picked: number) {
+      const c = ready();
+      if (!c) return;
+      const freq = EAT_LADDER[picked % EAT_LADDER.length];
+      blip(c, freq, 0.09, 0.06, 1.5);
     },
     death() {
       const c = ready();
@@ -462,6 +489,18 @@ function createAudio() {
       osc.connect(filter).connect(g).connect(c.destination);
       osc.start(now);
       osc.stop(now + 0.55);
+    },
+    hiScore() {
+      const c = ready();
+      if (!c) return;
+      // Quick arcade-fanfare: ascending arpeggio with a doubled top note.
+      const notes = [523.25, 659.25, 783.99, 1046.5, 1046.5];
+      notes.forEach((f, i) => {
+        window.setTimeout(() => {
+          const c2 = ready();
+          if (c2) blip(c2, f, i === notes.length - 1 ? 0.22 : 0.1, 0.06);
+        }, i * 95);
+      });
     },
     close() {
       if (ctx && ctx.state !== 'closed') {

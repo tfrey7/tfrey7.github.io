@@ -7,6 +7,7 @@ import {
 } from '../lib/avatar';
 import { markDiscovered } from '../lib/discoveries';
 import { end, tryStart } from '../lib/interaction-lock';
+import { hideJournal, peekJournal } from './journal';
 
 const LOCK_ID = 'time-warp';
 
@@ -580,6 +581,13 @@ export function initTimeWarp() {
   // forced reflow in between).
   function flip(targetEra: Era | null) {
     clearFlipTimers();
+
+    // Park the journal fully off-screen while warped (the tucked-peek state
+    // would still hover the clip + top strip over a 90s/dino theme, which
+    // reads as jarring). On the un-warp landing (targetEra === null) we let
+    // it slide back into its tucked peek.
+    if (targetEra === null) peekJournal();
+    else hideJournal();
 
     const reduced = prefersReducedMotion();
     if (!reduced) {

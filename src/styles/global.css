@@ -36,7 +36,11 @@
 
 @layer components {
   .resume {
-    @apply mx-auto w-full max-w-page px-6 sm:px-8 py-8 sm:py-10;
+    @apply mx-auto w-full max-w-page px-6 sm:px-8 pt-8 sm:pt-10;
+    /* Extra bottom padding so the page can scroll past the fixed journal
+       clipboard (tucked ~96px above viewport edge, ~120px on hover) without
+       it overlapping the view-source link or last resume content. */
+    @apply pb-32 sm:pb-36;
   }
 
   .resume-name {
@@ -1113,6 +1117,140 @@
     .greenhouse-screen.is-landing svg {
       transition: none;
       animation: none;
+    }
+  }
+
+  /* Firework celebration. Fires when the CRT lands on Strong Yes — shells
+     rise from around the RESUMES slot (driven by a CSS transition) and burst
+     into rating-icon particles whose flight is integrated by an rAF loop in
+     greenhouse.ts (gravity + drag, similar to the paper physics). */
+  .gh-firework-shell {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 5px;
+    height: 5px;
+    margin-left: -2.5px;
+    margin-top: -2.5px;
+    border-radius: 50%;
+    background: #fff;
+    /* Inner core is white; outer halo is the rating's glow color, so the
+       rocket telegraphs the upcoming burst (red for thumbs-down, green for
+       Strong Yes, etc.). --gh-shell-glow is set inline per shell. */
+    box-shadow:
+      0 0 6px #fff,
+      0 0 14px var(--gh-shell-glow, #ffd58a),
+      0 0 22px var(--gh-shell-glow, #ffd58a);
+    pointer-events: none;
+    z-index: 9999;
+    transform: translate(var(--gh-shell-x, 0), var(--gh-shell-y, 0));
+    /* Linear easing on purpose: trail embers are dropped at uniform time
+       fractions and need to land on the rocket's actual path. A non-linear
+       curve would offset them from where the shell actually is. */
+    transition: transform var(--gh-shell-rise-ms, 480ms) linear;
+    will-change: transform;
+  }
+  .gh-firework-shell.is-rising {
+    transform: translate(var(--gh-shell-tx, 0), var(--gh-shell-ty, 0));
+  }
+
+  /* Trail ember. Small fading spark dropped behind a rising rocket — one
+     per path-fraction sample. Inline left/top set its absolute position;
+     the keyframe handles the fade + shrink. */
+  .gh-firework-ember {
+    position: absolute;
+    width: 4px;
+    height: 4px;
+    margin-left: -2px;
+    margin-top: -2px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow:
+      0 0 4px #fff,
+      0 0 10px var(--gh-ember-glow, #ffd58a);
+    pointer-events: none;
+    z-index: 9998;
+    animation: gh-firework-ember 420ms ease-out forwards;
+  }
+  @keyframes gh-firework-ember {
+    0%   { opacity: 1; transform: scale(1); }
+    100% { opacity: 0; transform: scale(0.35); }
+  }
+
+  .gh-firework-particle {
+    /* Size is set inline per-particle (mixed big/small tiers per burst —
+       see spawnFireworkBurst). The defaults below only apply if a particle
+       is somehow spawned without inline width/height. */
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 22px;
+    height: 22px;
+    pointer-events: none;
+    z-index: 9999;
+    will-change: transform, opacity;
+  }
+  .gh-firework-particle svg {
+    width: 100%;
+    height: 100%;
+    /* Stacked drop-shadows build a layered bloom: tight white core for
+       contrast against light page background, then two wider colored halos
+       so the spark reads as luminous rather than as a flat icon. */
+    filter:
+      drop-shadow(0 0 1px #fff)
+      drop-shadow(0 0 3px #fff)
+      drop-shadow(0 0 8px var(--gh-fp-glow, #fff))
+      drop-shadow(0 0 18px var(--gh-fp-glow, #fff));
+  }
+
+  /* Burst-moment flash. A short-lived radial gradient that scales up from
+     the burst center, selling the "pop" before the ring expands. Spawned by
+     spawnFireworkBurst alongside the particles. */
+  .gh-firework-flash {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 110px;
+    height: 110px;
+    margin-left: -55px;
+    margin-top: -55px;
+    border-radius: 50%;
+    pointer-events: none;
+    z-index: 9998;
+    background: radial-gradient(
+      circle,
+      rgba(255, 255, 255, 0.95) 0%,
+      var(--gh-flash-glow, #ffd58a) 28%,
+      rgba(0, 0, 0, 0) 70%
+    );
+    will-change: transform, opacity;
+    animation: gh-firework-flash 320ms ease-out forwards;
+  }
+  @keyframes gh-firework-flash {
+    0%   { opacity: 1;   transform: scale(0.25); }
+    40%  { opacity: 0.9; transform: scale(1.05); }
+    100% { opacity: 0;   transform: scale(1.55); }
+  }
+
+  /* Inside the greenhouse stage, the rising *rocket* and its smoke trail
+     paint behind the supercomputer chassis (z-index: 1) so the launch reads
+     as coming from inside the machine — shell + embers tuck behind the
+     silhouette on the way up. The burst itself (flash + icon particles)
+     keeps the default high z-index so the celebration pops in front of
+     everything, including the chassis. .greenhouse-stage's isolation:isolate
+     contains this stacking; other stages (the clipboard firework) are
+     unaffected and use the default high z-indexes throughout. */
+  .greenhouse-stage .gh-firework-shell,
+  .greenhouse-stage .gh-firework-ember {
+    z-index: 0;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .gh-firework-shell,
+    .gh-firework-ember,
+    .gh-firework-particle,
+    .gh-firework-flash {
+      display: none;
     }
   }
 
@@ -2236,15 +2374,22 @@
     width: 170px;
     height: auto;
     opacity: 0.75;
+    /* Source PNG faces left; flip so the beak points into the scene.
+       The keyframes also include scaleX(-1) so the glide stays flipped
+       during animation; this base value covers the reduced-motion case
+       where the animation is disabled. */
+    transform: scaleX(-1);
     animation: dino-ptero-glide 16s ease-in-out infinite;
   }
 
+  /* scaleX(-1) is last so the translate path is preserved — only the
+     element's local orientation flips, sending the bird's beak rightward. */
   @keyframes dino-ptero-glide {
-    0%   { transform: translate(0, 0)         rotate(-2deg); }
-    25%  { transform: translate(140px, 60px)  rotate(6deg);  }
-    50%  { transform: translate(280px, 110px) rotate(-1deg); }
-    75%  { transform: translate(140px, 70px)  rotate(5deg);  }
-    100% { transform: translate(0, 0)         rotate(-2deg); }
+    0%   { transform: translate(0, 0)         rotate(-2deg) scaleX(-1); }
+    25%  { transform: translate(140px, 60px)  rotate(6deg)  scaleX(-1); }
+    50%  { transform: translate(280px, 110px) rotate(-1deg) scaleX(-1); }
+    75%  { transform: translate(140px, 70px)  rotate(5deg)  scaleX(-1); }
+    100% { transform: translate(0, 0)         rotate(-2deg) scaleX(-1); }
   }
 
   /* Side margins are too cramped under ~1100px wide — hide palms/volcano so
@@ -2775,6 +2920,19 @@
      Light vs. dark mode swaps to walnut + parchment so the metaphor reads
      under either system theme. */
 
+  /* Viewport-fixed stage that hosts the clipboard firework — fired when a
+     visitor clicks a found row (currently only greenhouse). Sits above the
+     clipboard panel so the rocket and trail are visible the whole way up
+     instead of being clipped by the masonite. The lib/firework module
+     positions its shells/embers/particles in stage-local coordinates, and
+     inset:0 + position:fixed makes those align 1:1 with viewport pixels. */
+  .journal-firework-stage {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 9001;
+  }
+
   /* The clipboard itself — masonite/tan board with hard edges and a
      stepped-shadow outline (no border-radius, no smooth gradient). It lives
      at the bottom of the viewport persistently after first appearance, and
@@ -3278,6 +3436,52 @@
   }
 
   /* ---------- /Journal easter egg ---------- */
+
+  /* ---------- view-source: trigger ----------
+     Tiny "view-source:tfrey7.com" link at the bottom of .resume. Styled like
+     an old browser URL prefix — a faint, programmer-y affordance that opens
+     the source modal. Doubles as the mobile equivalent of right-click. */
+
+  .resume-actions {
+    @apply mt-10 flex justify-center;
+  }
+
+  .resume-view-source {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    letter-spacing: 0.01em;
+    color: rgb(100 116 139);             /* slate-500 */
+    background: transparent;
+    border: 0;
+    padding: 10px 8px;                   /* ample tap target without looking like a button */
+    cursor: pointer;
+    text-decoration: underline;
+    text-decoration-color: rgb(203 213 225);   /* slate-300 */
+    text-underline-offset: 3px;
+    transition: color 120ms ease, text-decoration-color 120ms ease;
+  }
+
+  .resume-view-source:hover {
+    color: rgb(51 65 85);                /* slate-700 */
+    text-decoration-color: currentColor;
+  }
+
+  .resume-view-source:focus-visible {
+    outline: 2px solid #4f46e5;
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  :is(.dark, html.dark) .resume-view-source {
+    color: rgb(100 116 139);             /* slate-500 */
+    text-decoration-color: rgb(51 65 85); /* slate-700 */
+  }
+
+  :is(.dark, html.dark) .resume-view-source:hover {
+    color: rgb(203 213 225);             /* slate-300 */
+  }
+
+  /* ---------- /view-source: trigger ---------- */
 
   /* ---------- View Source easter egg ---------- */
   /* Right-click anywhere on the resume → a dark code-editor modal slides in

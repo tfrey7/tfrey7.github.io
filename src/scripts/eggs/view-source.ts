@@ -159,6 +159,18 @@ export function initViewSource() {
   const resume = document.querySelector<HTMLElement>('.resume');
   if (!resume) return;
 
+  // Mobile/discoverable trigger: a small "view-source:tfrey7.com" link at the
+  // bottom of the resume. Styled like an old browser URL prefix, it's the
+  // tap-friendly counterpart to right-click and a faint hint that there's
+  // something to find here.
+  const vsBtn = document.querySelector<HTMLButtonElement>('.resume-view-source');
+  if (vsBtn) {
+    vsBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      openModal();
+    });
+  }
+
   document.addEventListener('contextmenu', (e) => {
     // Modifier-held → defer to the browser's real menu (Inspect, etc.).
     if (e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;

@@ -1,4 +1,14 @@
-import { playPaperWhoosh, resumeAudio } from '../lib/audio';
+import {
+  playBroomSweep,
+  playDigitizeSlurp,
+  playDigitizeWoop,
+  playFireworkBurst,
+  playFireworkLaunch,
+  playPaperWhoosh,
+  playScorecardLanding,
+  playScorecardTick,
+  resumeAudio,
+} from '../lib/audio';
 import {
   ARRIVALS,
   type AvatarAnim,
@@ -8,6 +18,13 @@ import {
   pickRandom,
 } from '../lib/avatar';
 import { markDiscovered } from '../lib/discoveries';
+import {
+  cancelFireworksOnStage,
+  launchFirework,
+  type Rating,
+  RATING_GLYPHS,
+  RATING_ORDER,
+} from '../lib/firework';
 import { end, tryStart } from '../lib/interaction-lock';
 
 const LOCK_ID = 'greenhouse-cascade';
@@ -46,7 +63,8 @@ const AVATAR_W = 192;
 //   - durationMs: 3500 — sets per-frame timing (~140ms/frame). The
 //     effective on-screen core time is durationMs - skipMs (3500 - 1400 =
 //     2100ms), which is also the avatar's translate window — see
-//     getCoreDurationMs.
+//     getCoreDurationMs. Walking pace stays here; total sweep time is
+//     instead cut by shortening the distance (see fromX in runSweep).
 const CORE_BROOM_SWEEP: AvatarAnim = {
   sprite: '/sprites/tim/cores/broom-sweep.png',
   durationMs: 3500,
@@ -56,7 +74,7 @@ const CORE_BROOM_SWEEP: AvatarAnim = {
 
 // Beat after the click before the sweep sequence kicks off. Tuned so all
 // papers have time to burst → drift → land before Tim arrives.
-const SWEEP_DELAY_AFTER_CLICK_MS = 2200;
+const SWEEP_DELAY_AFTER_CLICK_MS = 1100;
 // Beat after arrival lands before the sweep core starts.
 const ARRIVAL_TO_SWEEP_MS = 100;
 
@@ -120,12 +138,12 @@ const EXIT_AFTER_LANDING_MS = 400;
 // because once the brush has crossed a paper it's "behind the broom" and
 // belongs in the pile regardless. Tuned to the painted brush's leading edge.
 const BROOM_FRONT_FRAC = 1.05;
-// Extra space to start the avatar off-screen-left, beyond -120 (which is the
-// leftmost a paper can land per the existing side-cull). With this margin
-// the brush's front edge starts to the LEFT of the leftmost possible paper,
-// so every paper is initially ahead of the brush and gets caught naturally
-// as the brush moves over it — no instant-snap teleporting from the left.
-const SWEEP_START_LEFT_MARGIN = 160;
+// Extra space the brush front begins to the LEFT of the trigger word's
+// left edge. Papers all drift rightward of the trigger, so the trigger's
+// left edge is the leftmost any paper can land; this margin keeps the
+// brush initially left of every paper so the first contact is a clean
+// sweep rather than an instant-snap.
+const SWEEP_START_LEFT_MARGIN = 80;
 
 // Scorecard rating sequence. Plays after the resumes get loaded into the
 // computer: screen flashes through Greenhouse's five scorecard ratings —
@@ -133,37 +151,26 @@ const SWEEP_START_LEFT_MARGIN = 160;
 // then lands on Strong Yes with a celebratory pulse. Icons are inlined SVG
 // (Material-style paths) so they render crisp at any size without needing
 // a sprite asset; colors match the Greenhouse scorecard reference.
-type Rating = 'strong-no' | 'no' | 'mixed' | 'yes' | 'strong-yes';
+// Per-rating pling pitches — ascending pentatonic-ish so the spinner reads
+// as distinct symbols cycling past, with strong-yes as the highest "win" note.
+const RATING_PITCH: Record<Rating, number> = {
+  'strong-no': 523.25, // C5
+  no: 587.33,          // D5
+  mixed: 659.25,       // E5
+  yes: 783.99,         // G5
+  'strong-yes': 1046.5, // C6
+};
 
-const RATING_ORDER: Rating[] = ['strong-no', 'no', 'mixed', 'yes', 'strong-yes'];
-
-const ICON_STRONG_NO = `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">` +
-  `<polygon points="8,2 16,2 22,8 22,16 16,22 8,22 2,16 2,8" fill="#e23b29"/>` +
-  `<path d="M8.5 8.5 L15.5 15.5 M15.5 8.5 L8.5 15.5" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/>` +
-  `</svg>`;
-
-const ICON_NO = `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">` +
-  `<path fill="#e23b29" d="M15 3H6c-.83 0-1.54.5-1.84 1.22l-3.02 7.05c-.09.23-.14.47-.14.73v2c0 1.1.9 2 2 2h6.31l-.95 4.57-.03.32c0 .41.17.79.44 1.06L9.83 23l6.59-6.59c.36-.36.58-.86.58-1.41V5c0-1.1-.9-2-2-2zm4 0v12h4V3h-4z"/>` +
-  `</svg>`;
-
-const ICON_MIXED = `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">` +
-  `<path fill="#f4b942" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zM7 13v-2h10v2H7z"/>` +
-  `</svg>`;
-
-const ICON_YES = `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">` +
-  `<path fill="#43b5a0" d="M9 21h9c.83 0 1.54-.5 1.84-1.22l3.02-7.05c.09-.23.14-.47.14-.73v-2c0-1.1-.9-2-2-2h-6.31l.95-4.57.03-.32c0-.41-.17-.79-.44-1.06L14.17 1 7.59 7.59C7.22 7.95 7 8.45 7 9v10c0 1.1.9 2 2 2zM1 9h4v12H1V9z"/>` +
-  `</svg>`;
-
-const ICON_STRONG_YES = `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">` +
-  `<path fill="#43b5a0" d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/>` +
-  `</svg>`;
-
-const RATING_GLYPHS: Record<Rating, { svg: string; glow: string }> = {
-  'strong-no':  { svg: ICON_STRONG_NO,  glow: '#e23b29' },
-  'no':         { svg: ICON_NO,         glow: '#e23b29' },
-  'mixed':      { svg: ICON_MIXED,      glow: '#f4b942' },
-  'yes':        { svg: ICON_YES,        glow: '#43b5a0' },
-  'strong-yes': { svg: ICON_STRONG_YES, glow: '#43b5a0' },
+// Per-rating pitch shift for the firework burst sound. Same ascent shape as
+// RATING_PITCH but in playFireworkBurst's [0.8, 1.25] range — so each rocket
+// pops at a slightly higher pitch than the last, reinforcing the crescendo
+// into Strong Yes without being musically pitched.
+const RATING_BURST_PITCH: Record<Rating, number> = {
+  'strong-no': 0.85,
+  no: 0.95,
+  mixed: 1.0,
+  yes: 1.1,
+  'strong-yes': 1.2,
 };
 
 // Tempo of the flash. Two fast cycles set up the "slot-machine" beat, then
@@ -174,9 +181,37 @@ const RATING_GLYPHS: Record<Rating, { svg: string; glow: string }> = {
 const FLASH_FAST_MS = 70;
 const FLASH_MED_MS = 110;
 const FLASH_SLOW_MS = 180;
-const FLASH_LANDING_HOLD_MS = 2200;
+// Sized so the rapid-fire 5-firework celebration fits inside the strong-yes
+// hold before the chassis fades. Math: 4 × FIREWORK_STAGGER_MS +
+// FIREWORK_RISE_MS + FIREWORK_PARTICLE_LIFETIME_MS ≈ this. The final
+// particles tail a beat into the chassis fade, which reads natural (sparks
+// already dimming).
+const FLASH_LANDING_HOLD_MS = 2600;
 // Matches .greenhouse-supercomputer's opacity transition.
 const COMPUTER_FADE_OUT_MS = 380;
+
+// Firework celebration. Fires the moment Strong Yes lands on the CRT —
+// "the computer is done analyzing the resumes and the verdict is out".
+// Each shell rises from around the RESUMES slot, then bursts into a uniform
+// burst of one rating's icon. The sequence runs once per rating in
+// ascending order so the show crescendos into the verdict the CRT already
+// landed on. Physics + per-rocket lifecycle live in lib/firework — this
+// module just picks the launch points and the timing of the sequence.
+const FIREWORK_SEQUENCE: Rating[] = ['strong-no', 'no', 'mixed', 'yes', 'strong-yes'];
+// Stagger between successive launches. Tight so the show reads as a rapid-
+// fire finale — multiple shells in the air at once, overlapping bursts.
+// (Rise is ~480ms, so at 280ms stagger two shells are airborne before the
+// first one bursts.)
+const FIREWORK_STAGGER_MS = 280;
+// Launch positions cluster around the chassis center — rockets read as
+// emerging from the machine's core rather than from one corner. Small
+// per-axis spread keeps consecutive launches from stacking on the same
+// pixel ("multiple mortar tubes inside the machine") without losing the
+// "center of the computer" feel.
+const FIREWORK_LAUNCH_X_FRAC_MIN = 0.4;
+const FIREWORK_LAUNCH_X_FRAC_MAX = 0.6;
+const FIREWORK_LAUNCH_Y_FRAC_MIN = 0.4;
+const FIREWORK_LAUNCH_Y_FRAC_MAX = 0.6;
 
 // Swept-paper pile geometry. Swept papers don't collapse to a single point
 // — they spread out in a small grid in front of the brush, each new paper
@@ -272,6 +307,26 @@ export function initGreenhouse() {
     };
   }
 
+  // A random spot near the chassis center for a firework launch. Rockets
+  // read as emerging from inside the machine's core (and visually pass
+  // *behind* the chassis on the way up — see the firework layer's z-index
+  // in global.css), not from a single fixed point.
+  function getFireworkLaunchPoint(): { x: number; y: number } {
+    if (!stage || !superEl) return getSlotCenter();
+    const stageRect = stage.getBoundingClientRect();
+    const superRect = superEl.getBoundingClientRect();
+    const xFrac =
+      FIREWORK_LAUNCH_X_FRAC_MIN +
+      Math.random() * (FIREWORK_LAUNCH_X_FRAC_MAX - FIREWORK_LAUNCH_X_FRAC_MIN);
+    const yFrac =
+      FIREWORK_LAUNCH_Y_FRAC_MIN +
+      Math.random() * (FIREWORK_LAUNCH_Y_FRAC_MAX - FIREWORK_LAUNCH_Y_FRAC_MIN);
+    return {
+      x: superRect.left - stageRect.left + xFrac * superRect.width,
+      y: superRect.top - stageRect.top + yFrac * superRect.height,
+    };
+  }
+
   const avatar = createAvatarController(avatarEl);
 
   const activePapers: Paper[] = [];
@@ -296,15 +351,32 @@ export function initGreenhouse() {
   let sweepFromX = 0;
   let sweepToX = 0;
   let sweepActive = false;
+  // Stop handle for the broom-sweep audio. Held only while the sweep core is
+  // running so clearAll can cut the bristle "shhh" on a mid-sweep re-click.
+  let stopSweepSound: (() => void) | null = null;
+  // Stop handle for the digitize-cascade slurp. Same idea: held only across
+  // the cascade so clearAll can cut the suction sound on re-click.
+  let stopDigitizeSound: (() => void) | null = null;
 
   function clearAll() {
     activePapers.forEach((p) => p.el.remove());
     activePapers.length = 0;
     activeParticles.forEach((el) => el.remove());
     activeParticles.length = 0;
+    // Wipe any in-flight firework rockets/embers/particles spawned on this
+    // stage. clearAll() is the only caller, fired on re-click.
+    cancelFireworksOnStage(stage!);
     sweepTimers.forEach((t) => window.clearTimeout(t));
     sweepTimers.length = 0;
     sweepActive = false;
+    if (stopSweepSound) {
+      stopSweepSound();
+      stopSweepSound = null;
+    }
+    if (stopDigitizeSound) {
+      stopDigitizeSound();
+      stopDigitizeSound = null;
+    }
     sweptCount = 0;
     avatar.reset();
     avatarEl!.style.left = '';
@@ -314,6 +386,25 @@ export function initGreenhouse() {
       screenEl.innerHTML = '';
       screenEl.style.removeProperty('--gh-screen-glow');
     }
+  }
+
+  function runFireworks() {
+    if (!stage) return;
+    FIREWORK_SEQUENCE.forEach((rating, i) => {
+      sweepTimers.push(
+        window.setTimeout(() => {
+          const launch = getFireworkLaunchPoint();
+          launchFirework({
+            stage: stage!,
+            originX: launch.x,
+            originY: launch.y,
+            rating,
+            onLaunch: () => playFireworkLaunch(RATING_BURST_PITCH[rating]),
+            onBurst: () => playFireworkBurst(RATING_BURST_PITCH[rating]),
+          });
+        }, i * FIREWORK_STAGGER_MS),
+      );
+    });
   }
 
   // Plays the scorecard-rating flash sequence on the supercomputer's CRT.
@@ -360,7 +451,23 @@ export function initGreenhouse() {
     for (const step of ticks) {
       const r = step.rating;
       const landing = step.landing === true;
-      sweepTimers.push(window.setTimeout(() => showRating(r, landing), t));
+      sweepTimers.push(
+        window.setTimeout(() => {
+          showRating(r, landing);
+          // Slot-reel audio: each tick gets its rating's pling so the spinner
+          // reads as distinct symbols cycling past; landing swaps to the
+          // fatter ding to mark "this is the answer".
+          if (landing) {
+            playScorecardLanding();
+          } else {
+            playScorecardTick(RATING_PITCH[r]);
+          }
+          // Fire the celebration in sync with the Strong Yes landing pulse.
+          // Shells stagger across the strong-yes hold; the last particles
+          // tail off just before the chassis fade completes.
+          if (landing) runFireworks();
+        }, t),
+      );
       t += step.ms;
     }
     // End of the strong-yes hold — drop .is-active so the whole
@@ -396,12 +503,13 @@ export function initGreenhouse() {
       const jitterY = (Math.random() - 0.5) * 8;
       const y = originY + jitterY;
 
-      // Burst velocity: modest upward kick, with horizontal spread biased
-      // outward from the click point. Tuned so peak height stays roughly
-      // within the role section.
-      const upSpeed = 220 + Math.random() * 220;
-      const sideBias = Math.random() < 0.5 ? -1 : 1;
-      const sideSpeed = sideBias * (40 + Math.random() * 220);
+      // Burst velocity: light upward kick paired with a higher gravity in
+      // physicsTick so papers don't loft far before falling. Horizontal
+      // velocity is aimed rightward — the burst projects toward the
+      // receptacle, so papers land in a tight band near the machine and
+      // Tim's subsequent sweep is a short walk at natural pace.
+      const upSpeed = 130 + Math.random() * 130;
+      const sideSpeed = 80 + Math.random() * 280;
       const rotation = (Math.random() - 0.5) * 60;
       const rotationVel = (Math.random() - 0.5) * 360;
       // Sprite is 48×48 native; render slightly above 1× with per-paper
@@ -459,11 +567,11 @@ export function initGreenhouse() {
     // === stageW and this collapses back to the original behaviour.
     const superRight = getSuperRight();
     const sweptCullX = Math.max(stageW, superRight) + 60;
-    // Faster fall than the previous pass — still feathery, but you can
-    // actually see them land in a reasonable beat.
-    const GRAVITY = 460;
+    // Snappy fall — papers shouldn't loft for long; the burst should drop
+    // fast enough to clear the way for the sweep without lingering.
+    const GRAVITY = 760;
     const HORIZONTAL_DRAG = 0.985;
-    const TERMINAL_VY = 210;
+    const TERMINAL_VY = 320;
     const ROTATION_DRAG = 0.988;
     const REST_DRAG = 0.82;
 
@@ -698,12 +806,35 @@ export function initGreenhouse() {
       return a.sweptOffsetX - b.sweptOffsetX;
     });
     const slot = getSlotCenter();
+    // Continuous suction across the visible cascade — sized so it covers
+    // from the first paper's flash through the last shard's flight in.
+    const slurpMs =
+      snapshot.length * DIGITIZE_STAGGER_MS + DIGITIZE_FLASH_MS + DIGITIZE_FLIGHT_MS;
+    if (snapshot.length > 0) {
+      stopDigitizeSound = playDigitizeSlurp(slurpMs);
+    }
+    // Woop blips fire every Nth paper with rising pitch — too dense if we
+    // play one per paper (14ms stagger = 71/sec), so step through them.
+    const WOOP_STEP = 4;
     snapshot.forEach((p, i) => {
       sweepTimers.push(
         window.setTimeout(() => digitizePaper(p, slot.x, slot.y), i * DIGITIZE_STAGGER_MS),
       );
+      if (i % WOOP_STEP === 0) {
+        const progress = snapshot.length > 1 ? i / (snapshot.length - 1) : 0;
+        sweepTimers.push(
+          window.setTimeout(() => playDigitizeWoop(progress), i * DIGITIZE_STAGGER_MS),
+        );
+      }
     });
-    return snapshot.length * DIGITIZE_STAGGER_MS + DIGITIZE_FLASH_MS + DIGITIZE_FLIGHT_MS;
+    // Slurp ends naturally with the flight tail; drop the handle after that
+    // so clearAll doesn't try to stop a finished source.
+    sweepTimers.push(
+      window.setTimeout(() => {
+        stopDigitizeSound = null;
+      }, slurpMs + 60),
+    );
+    return slurpMs;
   }
 
   // After the broom-sweep parks Tim at the receptacle, this is the rest of
@@ -768,11 +899,17 @@ export function initGreenhouse() {
     const arrival = pickRandom(ARRIVALS);
     const core = CORE_BROOM_SWEEP;
 
-    // Start far enough left that the brush's front edge begins LEFT of
-    // -120 (the leftmost a paper can land), so every paper is initially
-    // ahead of the brush and gets caught smoothly as it passes — no
-    // instant-snap jumps.
-    const fromX = -AVATAR_W * BROOM_FRONT_FRAC - SWEEP_START_LEFT_MARGIN;
+    // Start just left of the trigger word: papers all drift rightward of
+    // the trigger, so its left edge is the leftmost any paper can land.
+    // Starting the brush a short margin further left ensures every paper
+    // is initially ahead of the brush and gets caught smoothly — and the
+    // walk to the receptacle is short enough that the sweep finishes
+    // quickly at a natural pace.
+    const triggerRect = trigger!.getBoundingClientRect();
+    const stageRect = stage!.getBoundingClientRect();
+    const triggerLeftLocal = triggerRect.left - stageRect.left;
+    const fromX =
+      triggerLeftLocal - AVATAR_W * BROOM_FRONT_FRAC - SWEEP_START_LEFT_MARGIN;
     // End with the brush front parked at the receptacle's left edge — the
     // pile rides at brushFront + 4..29, so it lands compressed right in
     // front of the RESUMES slot, ready for the (future) pickup-and-insert
@@ -803,6 +940,8 @@ export function initGreenhouse() {
         // A second whoosh as the broom catches the papers — the burst whoosh
         // played at click time, this one anchors the sweep.
         playPaperWhoosh();
+        // Bristle "shhh" runs for the full visible sweep window.
+        stopSweepSound = playBroomSweep(totalCoreMs);
         ensurePhysicsLoop();
       }, T_CORE_START),
     );
@@ -810,6 +949,9 @@ export function initGreenhouse() {
     sweepTimers.push(
       window.setTimeout(() => {
         sweepActive = false;
+        // Sweep audio decays to silence on its own; just drop the handle so
+        // clearAll doesn't try to stop an already-finished source.
+        stopSweepSound = null;
         // Snap avatar to its end position so any rAF rounding doesn't leave
         // it mid-stride.
         avatarEl.style.left = `${toX}px`;
